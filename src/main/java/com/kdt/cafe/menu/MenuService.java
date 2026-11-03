@@ -5,6 +5,7 @@ import com.kdt.cafe.category.CategoryRepository;
 import com.kdt.cafe.common.CategoryNotFoundException;
 import com.kdt.cafe.common.MenuInUseException;
 import com.kdt.cafe.common.MenuNotFoundException;
+import com.kdt.cafe.common.ValidationErrorException;
 import com.kdt.cafe.order.OrderItemRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -147,6 +148,10 @@ public class MenuService {
     //A20메뉴명 검색
     @Transactional(readOnly = true)
     public List<MenuResponse> findByName(String name){
+        //메뉴명이 안들어왔을경우 null로 들어올경우
+        //ValidationErrorException 처리
+        if(name == null)
+            throw new ValidationErrorException("입력값을 확인해 주세요");
         List<Menu> found = this.menuRepository.searchByName(name);
         List<MenuResponse> responses = new ArrayList<>();
 
@@ -158,10 +163,10 @@ public class MenuService {
 
     //A21판매 여부 변경
     @Transactional
-    public MenuResponse changeAvailable(Long id,boolean available){
+    public MenuResponse changeAvailable(Long id,MenuAvailableRequest request){
         Menu menu = this.menuRepository.findById(id)
                 .orElseThrow(() -> new MenuNotFoundException("메뉴를 찾을 수 없습니다."));
-        menu.changeAvailable(available);
+        menu.changeAvailable(request.available());
         this.menuRepository.flush();
         return MenuResponse.from(menu);
     }
