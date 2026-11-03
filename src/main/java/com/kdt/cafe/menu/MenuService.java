@@ -120,7 +120,7 @@ public class MenuService {
         //취소 주문을 포함해 한번이라도 주문에 사용한 메뉴
         //409 Menu_In_Use로 삭제 거절
         boolean exsists = this.orderItemRepository
-                .existsByMenu_Id(id);
+                .existsByMenuId(id);
         if(exsists){
             throw new MenuInUseException("주문에 사용된 메뉴는 삭제할 수 없습니다.");
         }

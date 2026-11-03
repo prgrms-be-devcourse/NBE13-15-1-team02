@@ -3,9 +3,9 @@ package com.kdt.cafe.order;
 public record OrderItemResponse(
         Long menuId,
         String menuName,
-        long unitPrice,
+        int unitPrice,
         int quantity,
-        long lineAmount
+        int lineAmount
 ) {
     public static OrderItemResponse from(OrderItem item) {
         return new OrderItemResponse(
