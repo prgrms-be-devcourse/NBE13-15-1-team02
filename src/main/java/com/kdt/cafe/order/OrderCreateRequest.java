@@ -21,11 +21,11 @@ public record OrderCreateRequest(
 
         @NotNull(message = "우편번호를 입력해 주세요.")
         @Pattern(regexp = "\\d{5}", message = "우편번호는 숫자 5자리입니다.")
-        String postcode;
+        String postcode,
 
         @NotNull(message = "주문 항목을 입력해 주세요.")
         @Size(min = 1, max = 10, message = "주문 항목은 1~10개여야 합니다.")
-        List<@Valid @NotNull OrderItemRequset> items
+                List<@Valid @NotNull OrderItemRequest> items
 )
 {
     // 주소와 우편번호는 앞뒤 공백 제거 후 검사
