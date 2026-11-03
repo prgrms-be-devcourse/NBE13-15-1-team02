@@ -32,12 +32,13 @@ public class Menu {
     @Column(nullable = false, length = 300)
     private String description;
 
-    @Column(nullable = false)
+    //새 메뉴는 available=true 라고 되어있어서 수정하였습니다.
+    @Column(nullable = true)
     private boolean available;
 
     //OneToMany 추가
     //2026.11.3
-    @OneToMany(mappedBy = "Menu",fetch = FetchType.LAZY,
+    @OneToMany(mappedBy = "menu",fetch = FetchType.LAZY,
     cascade = CascadeType.ALL,orphanRemoval = true)
     private List<OrderItem> orderItems = new ArrayList<>();
 

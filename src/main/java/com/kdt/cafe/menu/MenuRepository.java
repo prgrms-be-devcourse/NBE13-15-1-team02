@@ -14,7 +14,7 @@ public interface MenuRepository extends JpaRepository<Menu, Long> {
 
     List<Menu> findByAvailableTrueOrderByIdAsc();
 
-    @Query("select m from Menu m where locate(:keyword, m.name) > 0 order by m.id asc")
+    @Query(value = "select m from Menu m where locate(:keyword, m.name) > 0 order by m.id asc")
     List<Menu> searchByName(@Param("keyword") String keyword);
 
     boolean existsByCategoryId(Long categoryId);
