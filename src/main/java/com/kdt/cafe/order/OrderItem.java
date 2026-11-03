@@ -38,6 +38,7 @@ public class OrderItem {
     @Column(name = "line_amount",nullable = false)
     private int lineAmount;
 
+    // 생성자 인자 축소
     public OrderItem(Order order, Menu menu, int quantity) {
         this.order = order;
         this.menu = menu;
