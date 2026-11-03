@@ -77,7 +77,7 @@ public class MenuService {
 
     //A8메뉴 등록
     @Transactional
-    public MenuResponse create(Long id,MenuCreateRequest request){
+    public MenuResponse create(MenuCreateRequest request){
         //카테고리가 없는경우
         //404, code:CATEGORY_NOT_FOUND,message: 카테고리를 찾으 수 없습니다
         Category found = this.categoryRepository.findById(request.categoryId())
