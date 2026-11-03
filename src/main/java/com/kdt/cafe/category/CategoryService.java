@@ -32,7 +32,7 @@ public class CategoryService {
         List<Category> find = this.categoryRepository.findAllByOrderByIdAsc();
 
         // 응답 DTO 리스트로 변환
-        return find.stream().map(CategoryResponse::toResponse).toList();
+        return find.stream().map(CategoryResponse::from).toList();
 
     }
 
@@ -46,7 +46,7 @@ public class CategoryService {
                 .orElseThrow(() -> new CategoryNotFoundException("카테고리를 찾을 수 없습니다."));
 
         // 응답 DTO로 변환
-        return CategoryResponse.toResponse(result);
+        return CategoryResponse.from(result);
 
     }
 
@@ -67,7 +67,7 @@ public class CategoryService {
         Category register = this.categoryRepository.save(new Category(trimmedName));
 
         // 등록된 카테고리 응답 DTO로 변환
-        return CategoryResponse.toResponse(register);
+        return CategoryResponse.from(register);
 
     }
 
@@ -92,7 +92,7 @@ public class CategoryService {
         find.updateName(trimmedName);
 
         // 변경된 카테고리 응답 DTO로 변환
-        return CategoryResponse.toResponse(find);
+        return CategoryResponse.from(find);
 
     }
 
