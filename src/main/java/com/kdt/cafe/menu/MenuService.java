@@ -7,19 +7,14 @@ import com.kdt.cafe.common.MenuInUseException;
 import com.kdt.cafe.common.MenuNotFoundException;
 import com.kdt.cafe.common.ValidationErrorException;
 import com.kdt.cafe.order.OrderItemRepository;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 
 @Service
 public class MenuService {
-
-    // 명세의 오류 메시지
-    private static final String VALIDATION_MSG = "입력값을 확인해 주세요.";
-    private static final String MENU_NOT_FOUND_MSG = "메뉴를 찾을 수 없습니다.";
-    private static final String CATEGORY_NOT_FOUND_MSG = "카테고리를 찾을 수 없습니다.";
-    private static final String MENU_IN_USE_MSG = "주문에 사용된 메뉴는 삭제할 수 없습니다.";
 
     private final MenuRepository menuRepository;
     private final CategoryRepository categoryRepository;
@@ -34,12 +29,12 @@ public class MenuService {
         this.orderItemRepository = orderItemRepository;
     }
 
-    // ID는 1 이상의 정수여야 한다 (아니면 400 오류 메세지)
+    // ID는 1 이상의 정수여야 한다 (아니면 400)
     private void validateId(Long id, String field) {
         if (id == null || id < 1) {
             // TODO: ValidationErrorException(String, Map) 생성자가 생기면
-            //       Map.of(field, "1 이상의 정수여야 합니다.") 를 두 번째 인자로 추가 (import java.util.Map)
-            throw new ValidationErrorException(VALIDATION_MSG);
+            //       Map.of(field, "1 이상의 정수여야 합니다.") 추가
+            throw new ValidationErrorException("입력값을 확인해 주세요.");
         }
     }
 
@@ -56,7 +51,7 @@ public class MenuService {
     public MenuResponse findById(Long id) {
         validateId(id, "menuId");
         Menu menu = menuRepository.findById(id)
-                .orElseThrow(() -> new MenuNotFoundException(MENU_NOT_FOUND_MSG));
+                .orElseThrow(() -> new MenuNotFoundException("메뉴를 찾을 수 없습니다."));
         return MenuResponse.from(menu);
     }
 
@@ -64,7 +59,7 @@ public class MenuService {
     @Transactional
     public MenuResponse create(MenuRequest request) {
         Category category = categoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new CategoryNotFoundException(CATEGORY_NOT_FOUND_MSG));
+                .orElseThrow(() -> new CategoryNotFoundException("카테고리를 찾을 수 없습니다."));
         Menu menu = new Menu(category, request.name(), request.price(), request.description());
         return MenuResponse.from(menuRepository.save(menu));
     }
@@ -74,9 +69,9 @@ public class MenuService {
     public MenuResponse update(Long id, MenuRequest request) {
         validateId(id, "menuId");
         Menu menu = menuRepository.findById(id)
-                .orElseThrow(() -> new MenuNotFoundException(MENU_NOT_FOUND_MSG));
+                .orElseThrow(() -> new MenuNotFoundException("메뉴를 찾을 수 없습니다."));
         Category category = categoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new CategoryNotFoundException(CATEGORY_NOT_FOUND_MSG));
+                .orElseThrow(() -> new CategoryNotFoundException("카테고리를 찾을 수 없습니다."));
 
         menu.changeCategory(category);
         menu.changeName(request.name());
@@ -92,11 +87,11 @@ public class MenuService {
     public void delete(Long id) {
         validateId(id, "menuId");
         Menu menu = menuRepository.findById(id)
-                .orElseThrow(() -> new MenuNotFoundException(MENU_NOT_FOUND_MSG));
+                .orElseThrow(() -> new MenuNotFoundException("메뉴를 찾을 수 없습니다."));
 
         // 취소 주문 포함, 한 번이라도 주문에 쓰였으면 409
         if (orderItemRepository.existsByMenuId(id)) {
-            throw new MenuInUseException(MENU_IN_USE_MSG);
+            throw new MenuInUseException("주문에 사용된 메뉴는 삭제할 수 없습니다.");
         }
         menuRepository.delete(menu);
     }
@@ -107,7 +102,7 @@ public class MenuService {
         validateId(categoryId, "categoryId");
         // 카테고리가 없으면 404, 있는데 메뉴가 없으면 200 + []
         if (!categoryRepository.existsById(categoryId)) {
-            throw new CategoryNotFoundException(CATEGORY_NOT_FOUND_MSG);
+            throw new CategoryNotFoundException("카테고리를 찾을 수 없습니다.");
         }
         return menuRepository.findByCategoryIdOrderByIdAsc(categoryId).stream()
                 .map(MenuResponse::from)
@@ -128,7 +123,7 @@ public class MenuService {
         String keyword = (name == null) ? "" : name.trim();
         if (keyword.isEmpty() || keyword.length() > 100) {
             // TODO: 생성자가 생기면 Map.of("keyword", "검색어는 공백 제외 1~100자여야 합니다.") 추가
-            throw new ValidationErrorException(VALIDATION_MSG);
+            throw new ValidationErrorException("입력값을 확인해 주세요.");
         }
         return menuRepository.findAllByOrderByIdAsc().stream()
                 .filter(menu -> menu.getName().contains(keyword))
@@ -141,7 +136,7 @@ public class MenuService {
     public MenuResponse changeAvailable(Long id, MenuAvailableRequest request) {
         validateId(id, "menuId");
         Menu menu = menuRepository.findById(id)
-                .orElseThrow(() -> new MenuNotFoundException(MENU_NOT_FOUND_MSG));
+                .orElseThrow(() -> new MenuNotFoundException("메뉴를 찾을 수 없습니다."));
         menu.changeAvailable(request.available());
         menuRepository.flush();
         return MenuResponse.from(menu);
