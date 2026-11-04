@@ -196,7 +196,7 @@ public class OrderService {
         // 원본 주문 꺼내기 -> 없으면 404 에러
         Order original = getOrder(orderId);
 
-        // 판메 중지 메뉴 검사 -> 하나라도 판매 중지면 409 에러
+        // 판매 중지 메뉴 검사 -> 하나라도 판매 중지면 409 에러
         for(OrderItem item : original.getItems()) {
             checkAvailable(item.getMenu());
         }
@@ -279,7 +279,7 @@ public class OrderService {
         }
     }
 
-    // A14 배송 묶음 : 같은 이메일, 배송일의 PLACED 주문 중 주소나 우편번호가 다른 주문이 있는지 검사 -> 409 에러
+    // A11, A23 : 같은 이메일, 배송일의 PLACED 주문 중 주소나 우편번호가 다른 주문이 있는지 검사 -> 409 에러
     private void checkAddress(String email, String address, String postcode, LocalDate shippingDate) {
         boolean mismatch = orderRepository
                 .findByEmailAndShippingDateAndStatus(email, shippingDate, OrderStatus.PLACED).stream()
@@ -295,7 +295,7 @@ public class OrderService {
                 date.atStartOfDay(), date.plusDays(1).atStartOfDay());
     }
 
-    // A12, A24 주문 목록을 이메일별로 나눠 담기
+    // A14, A24 주문 목록을 이메일별로 나눠 담기
     private Map<String, List<Order>> groupByEmail(List<Order> orders) {
         Map<String, List<Order>> result = new TreeMap<>();      // 키(이메일)가 자동으로 오름차순 정렬
         for(Order order : orders) {
