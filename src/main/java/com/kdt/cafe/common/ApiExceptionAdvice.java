@@ -2,10 +2,15 @@ package com.kdt.cafe.common;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -13,6 +18,7 @@ import java.util.Map;
 public class ApiExceptionAdvice {
 
     //@Valid위반
+    //400 badRequest
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> methodArgumentNotValidExceptionHandler(MethodArgumentNotValidException ex){
         Map<String, String> fieldErrors = new LinkedHashMap<>();
@@ -21,7 +27,17 @@ public class ApiExceptionAdvice {
         ApiError error = new ApiError("VALIDATION_ERROR","입력값을 확인해 주세요.",fieldErrors);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
-    //@
+    //JSON 문법오류 httpMessageNotReadableException.class
+    //400 badRequest
+    @ExceptionHandler({HttpMessageNotReadableException.class,
+            MissingServletRequestParameterException.class,
+            MethodArgumentTypeMismatchException.class,
+            HandlerMethodValidationException.class})
+    public ResponseEntity<ApiError> theOtherBadRequestExceptionHandler(Exception ex){
+        Map<String,String> fieldError = new HashMap<>();
+        ApiError error = new ApiError("VALIDATION_ERROR","입력값을 확인해주세요.",fieldError);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
 
 
 
