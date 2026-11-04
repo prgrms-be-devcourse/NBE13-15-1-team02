@@ -30,7 +30,7 @@
 
 ```
 NBE13-15-1-team02
-├── src/main/java          # 백엔드 코드 (위 패키지 구조)
+├── src/main/java          # 백엔드 코드 (아래 패키지 구조)
 ├── src/main/resources
 │   ├── application.yaml   # DB 접속 정보 (환경변수 주입, 2.1 참고)
 │   ├── schema.sql         # 테이블 생성 DDL

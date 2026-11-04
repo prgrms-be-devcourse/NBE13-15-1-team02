@@ -1,8 +1,10 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/kdt-spring?allowPublicKeyRetrieval=true&sslMode=DISABLED
-    username: root
-    password: kdtpass
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: none
