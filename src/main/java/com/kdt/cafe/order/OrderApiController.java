@@ -71,24 +71,40 @@ public class OrderApiController {
     //A17   접수일별 주문 통계 200 · OrderStatistics
     //GET /api/v1/statistics/orders?date={date}
     @GetMapping("/statistics/orders")
-    public OrderStatisticsResponse getOrderStatistics(){
-
+    public OrderStatisticsResponse getOrderStatistics(@RequestParam("date")LocalDate date){
+        return this.orderService.getOrderStatistics(date);
     }
 
     //A18   접수일별 메뉴 통계 200 · MenuStatistics[]
     //GET /api/v1/statistics/menus?date={date}
-
+    @GetMapping("/statistics/menus")
+    public List<MenuStatisticsResponse> getMenuStatistics(@RequestParam("date")LocalDate date){
+        return this.orderService.getMenuStatistics(date);
+    }
 
     //A22   주문 메모 수정 200 · 전체 Order
     //PUT /api/v1/orders/{orderId}/memo
+    @PutMapping("/orders/{orderId}/memo")
+    public OrderResponse updateMemo(@PathVariable("orderId")Long orderId,
+                                    @Valid @RequestBody MemoUpdateRequest request){
+        return this.orderService.updateMemo(orderId,request);
+    }
 
     //A23   재주문 201 · 새 Order
     //POST /api/v1/orders/{orderId}/reorder
+    @PostMapping("/orders/{orderId}/reorder")
+    public ResponseEntity<OrderResponse> reorder(@PathVariable("orderId")Long orderId){
+        OrderResponse reorder = this.orderService.reorder(orderId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(reorder);
+    }
 
 
     //A24   접수일별 고객 통계 200 · CustomerStatistics[]
     //GET /api/v1/statistics/customers?date={date}
-
+    @GetMapping("/statistics/customers")
+    public List<CustomerStatisticsResponse> getCustomerStatistics(@RequestParam("date")LocalDate date){
+        return this.orderService.getCustomerStatistics(date);
+    }
 
 
 
