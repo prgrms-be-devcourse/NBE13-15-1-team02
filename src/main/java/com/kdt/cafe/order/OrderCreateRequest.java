@@ -11,7 +11,7 @@ import java.util.List;
 public record OrderCreateRequest(
         @NotNull(message = "이메일을 입력해 주세요.")
         @Size(min = 1, max = 100, message = "이메일은 1~100자여야 합니다.")
-        @Pattern(regexp = "^[A-Za-z0-9._%+-]+A[A-Za-z0-9-]+(?:\\.[A-Za-z0-9]+)+$",
+        @Pattern(regexp = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9]+)+$",
                 message = "이메일 형식을 확인해 주세요.")
         String email,
 
