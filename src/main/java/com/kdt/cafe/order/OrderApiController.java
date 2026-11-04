@@ -61,7 +61,7 @@ public class OrderApiController {
 
     //A16   주문 취소 200 · 전체 Order
     //POST /api/v1/orders/{orderId}/cancel
-    @PostMapping("/ordrs/{orderId}/canel")
+    @PostMapping("/orders/{orderId}/cancel")
     public OrderResponse cancelOrder(@PathVariable("orderId")Long orderId){
         return this.orderService.cancelOrder(orderId);
     }
