@@ -1,11 +1,15 @@
 package com.kdt.cafe.menu;
 
 import com.kdt.cafe.category.Category;
+import com.kdt.cafe.order.OrderItem;
 import jakarta.persistence.*;
-
+import lombok.Getter;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "menu")
+@Getter
 public class Menu {
 
     @Id
@@ -28,7 +32,11 @@ public class Menu {
     @Column(nullable = false)
     private boolean available;
 
-    protected Menu(){
+    // cascade/orphanRemoval 제거
+    @OneToMany(mappedBy = "menu", fetch = FetchType.LAZY)
+    private List<OrderItem> orderItems = new ArrayList<>();
+
+    protected Menu() {
     }
 
     public Menu(Category category, String name, int price, String description) {
@@ -36,41 +44,12 @@ public class Menu {
         this.name = name;
         this.price = price;
         this.description = description;
-        this.available = true;
+        this.available = true; // 새 메뉴는 판매 중
     }
 
-    public void update(Category category, String name, String description, int price) {
-        this.category = category;
-        this.name = name;
-        this.price = price;
-        this.description = description;
-    }
-
-    public void changeAvailable(boolean available) {
-        this.available = available;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public Category getCategory() {
-        return category;
-    }
-
-    public String getName(){
-        return name;
-    }
-
-    public int getPrice() {
-        return price;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public boolean isAvailable() {
-        return available;
-    }
+    public void changeCategory(Category category) { this.category = category; }
+    public void changeName(String name) { this.name = name; }
+    public void changePrice(int price) { this.price = price; }
+    public void changeDescription(String description) { this.description = description; }
+    public void changeAvailable(boolean available) { this.available = available; }
 }
