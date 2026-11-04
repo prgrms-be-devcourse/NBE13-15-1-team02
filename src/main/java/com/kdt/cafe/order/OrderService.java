@@ -60,10 +60,10 @@ public class OrderService {
     // A11 주문 접수
     @Transactional
     public OrderResponse createOrder(OrderCreateRequest request) {
-        // 400 : menuId 중복
+        // menuId 중복 검사 -> 400 에러
         validateNoDuplicateMenu(request.items());
 
-        // 404 : 메뉴 존재 여부
+        // 메뉴 존재 여부 검사 -> 404 에러
         List<Menu> menus = new ArrayList<>();
         for (OrderItemRequest itemRequest : request.items()) {
             Menu menu = menuRepository.findById(itemRequest.menuId())
@@ -71,12 +71,12 @@ public class OrderService {
             menus.add(menu);
         }
 
-        // 409 : 판매 중지 메뉴
+        // 판매 가능 여부 검사 -> 409 에러
         for (Menu menu : menus) {
             checkAvailable(menu);
         }
 
-        // 409 : 같은 이메일, 배송일의 기존 주문과 배송지 비교
+        // 동일한 이메일과 배송일의 기존 주문과 배송지 비교 -> 409 에러
         LocalDateTime now = now();
         checkAddress(request.email(), request.address(), request.postcode(),
                 ShippingDateCalculator.shippingDateOf(now));
@@ -172,7 +172,7 @@ public class OrderService {
                 placedItems.addAll(o.getItems());
             }
         }
-        // 메뉴ID, 단가, 메뉴명이 같응ㄴ 항목끼리 수량을 더해서 리스트에 담기
+        // 메뉴ID, 단가, 메뉴명이 같은 항목끼리 수량을 더해서 리스트에 담기
         List<MenuStatisticsResponse> result = new ArrayList<>();
         for(Map.Entry<ItemKey, Long> e : sumItems(placedItems).entrySet()) {
             ItemKey key = e.getKey();
@@ -238,7 +238,7 @@ public class OrderService {
         return LocalDateTime.now(SEOUL).truncatedTo(ChronoUnit.SECONDS);
     }
 
-    // 400 : orderId 형식 → 404 : 주문 없음
+    // orderId가 null이거나 0 이하(400 에러), DB에 없음(404 에러)
     private Order getOrder(Long orderId) {
         if (orderId == null || orderId < 1) {
             throw new ValidationErrorException(VALIDATION_MESSAGE);
@@ -247,6 +247,7 @@ public class OrderService {
                 .orElseThrow(() -> new OrderNotFoundException("주문을 찾을 수 없습니다."));
     }
 
+    // 주문 항목에 같은 메뉴가 중복으로 담긴 경우 400 에러
     private void validateNoDuplicateMenu(List<OrderItemRequest> items) {
         Set<Long> seen = new HashSet<>();
         for (OrderItemRequest item : items) {
@@ -256,6 +257,7 @@ public class OrderService {
         }
     }
 
+    // A12 이메일별 주문 조회에서 입력받은 이메일 검사 -> 400 에러
     private void validateEmail(String email) {
         if (email == null || email.isEmpty() || email.length() > 100
                 || !EMAIL_PATTERN.matcher(email).matches()) {
@@ -263,19 +265,21 @@ public class OrderService {
         }
     }
 
+    // A14, A17, A18, A24에서 입력받은 날짜가 허용 범위 안에 있는지 검사 -> 400 에러
     private void validateDate(LocalDate date) {
         if (date == null || date.isBefore(MIN_DATE) || date.isAfter(MAX_DATE)) {
             throw new ValidationErrorException(VALIDATION_MESSAGE);
         }
     }
 
+    // 메뉴가 판매 중인지 검사 -> 409 에러
     private void checkAvailable(Menu menu) {
         if (!menu.isAvailable()) {
             throw new MenuUnavailableException("판매 중지된 메뉴가 포함되어 있습니다.");
         }
     }
 
-    // 같은 이메일, 배송일의 PLACED 주문 중 주소나 우편번호가 다른 주문이 있으면 409
+    // A14 배송 묶음 : 같은 이메일, 배송일의 PLACED 주문 중 주소나 우편번호가 다른 주문이 있는지 검사 -> 409 에러
     private void checkAddress(String email, String address, String postcode, LocalDate shippingDate) {
         boolean mismatch = orderRepository
                 .findByEmailAndShippingDateAndStatus(email, shippingDate, OrderStatus.PLACED).stream()
@@ -291,10 +295,17 @@ public class OrderService {
                 date.atStartOfDay(), date.plusDays(1).atStartOfDay());
     }
 
-    // 이메일 오름차순으로 묶기 (각 묶음 안은 원래 순서 유지)
+    // A12, A24 주문 목록을 이메일별로 나눠 담기
     private Map<String, List<Order>> groupByEmail(List<Order> orders) {
-        return orders.stream()
-                .collect(Collectors.groupingBy(Order::getEmail, TreeMap::new, Collectors.toList()));
+        Map<String, List<Order>> result = new TreeMap<>();      // 키(이메일)가 자동으로 오름차순 정렬
+        for(Order order : orders) {
+            String email = order.getEmail();
+            if(!result.containsKey(email)) {
+                result.put(email, new ArrayList<>());
+            }
+            result.get(email).add(order);                       // 같은 이메일의 주문 추가.
+        }
+        return result;
     }
 
     // 메뉴 ID, 주문 당시 메뉴명, 단가가 모두 같은 항목끼리 수량 합산
@@ -315,16 +326,20 @@ public class OrderService {
                            long totalQuantity, long totalAmount) {
 
         static Summary of(List<Order> orders) {
-            List<Order> placed = orders.stream()
-                    .filter(o -> o.getStatus() == OrderStatus.PLACED)
-                    .toList();
-            long totalQuantity = placed.stream()
-                    .flatMap(o -> o.getItems().stream())
-                    .mapToLong(OrderItem::getQuantity)
-                    .sum();
-            long totalAmount = placed.stream().mapToLong(Order::getTotalAmount).sum();
-            return new Summary(orders.size(), placed.size(), orders.size() - placed.size(),
-                    totalQuantity, totalAmount);
+            long placedCount = 0;
+            long totalQuantity = 0;
+            long totalAmount = 0;
+            for (Order o : orders) {
+                // 주문 상태가 PLACED인 주문 수량, 금액 계산
+                if(o.getStatus() == OrderStatus.PLACED) {
+                    placedCount++;
+                    totalAmount += o.getTotalAmount();
+                    for (OrderItem item : o.getItems()) {
+                        totalQuantity += item.getQuantity();
+                    }
+                }
+            }
+            return new Summary(orders.size(), placedCount, orders.size() - placedCount, totalQuantity, totalAmount);
         }
     }
 }
