@@ -1,5 +1,6 @@
 package com.kdt.cafe.order;
 
+import com.kdt.cafe.common.OrderNotCancellableException;
 import com.kdt.cafe.menu.Menu;
 import jakarta.persistence.*;
 
@@ -78,9 +79,9 @@ public class Order {
                         return;
                 }
                 // 취소 가능 여부 판단 - 예외 던지기
-                //if (!ShippingDateCalculator.isCancellable(shippingDate, now)) {
-                //
-                //}
+                if (!ShippingDateCalculator.isCancellable(shippingDate, now)) {
+                        throw new OrderNotCancellableException("배송일 14시 이후의 주문 건은 취소할 수 없습니다.");
+                }
                 this.status = OrderStatus.CANCELLED;
                 this.cancelledAt = now;
         }

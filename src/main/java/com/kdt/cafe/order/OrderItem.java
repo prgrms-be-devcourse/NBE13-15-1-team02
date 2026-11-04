@@ -2,13 +2,14 @@ package com.kdt.cafe.order;
 
 import com.kdt.cafe.menu.Menu;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "order_item")
 @Getter
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class OrderItem {
 
     @Id
@@ -31,13 +32,13 @@ public class OrderItem {
     @Column(name = "line_amount",nullable = false)
     private int lineAmount;
 
-    public OrderItem(Order order, Menu menu, String menuName, int unitPrice, int quantity, int lineAmount) {
+    public OrderItem(Order order, Menu menu, int quantity) {
         this.order = order;
         this.menu = menu;
-        this.menuName = menuName;
-        this.unitPrice = unitPrice;
+        this.menuName = menu.getName();
+        this.unitPrice = menu.getPrice();
         this.quantity = quantity;
-        this.lineAmount = lineAmount;
+        this.lineAmount = this.unitPrice * quantity;
     }
 
 
