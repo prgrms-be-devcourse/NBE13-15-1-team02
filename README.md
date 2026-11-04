@@ -25,17 +25,10 @@
 
 | 항목 | 버전 |
 |---|---|
-| Java | 21 ([`java -version`으로 확인한 실제 버전]) |
-| Spring Boot | [build.gradle에서 확인] |
-| MySQL | [`SELECT VERSION();`으로 확인] |
-| 빌드 도구 | Gradle |
-
-**DB 설정 위치**: `src/main/resources/application.yml`
-
-| 환경변수 | 설명 | 예시 값 |
-|---|---|---|
-| DB_USERNAME | DB 사용자 | root |
-| DB_PASSWORD | DB 비밀번호 | (본인 로컬 값) |
+| Java | 21 
+| Spring Boot | 4.1.2 (Spring Web MVC, Spring Data JPA, Validation)|
+| SQL | MySQL 8.4.11 (Docker 29.9.2, mysql:8.4 이미지)|
+| 빌드 도구 | Gradle 9.8.2 |
 
 ## 4. 실행 방법
 
