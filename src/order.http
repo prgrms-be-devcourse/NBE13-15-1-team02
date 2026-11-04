@@ -1,0 +1,960 @@
+### ============================================================
+### 주문 API 확인 (A11~A14, A16~A18, A22~A24)
+### 실행 순서: 0 → 1 → 2 → ... 위에서 아래로 순서대로 (앞 요청의 id를 뒤 요청이 사용)
+### 준비 데이터: 메뉴 id 1~4 (5000 / 7000 / 9000 / 11000원, 모두 판매 중) - menu.http 시드와 동일
+### 변수: baseUrl만 고정. email·today·orderId 등은 실행 중 자동 저장
+### 주의: 주문은 DB에 계속 쌓입니다. 실행할 때마다 새 이메일(타임스탬프)을 만들어 서로 안 겹치게 합니다.
+### 오류 우선순위: 400 → 404 → 409
+### ============================================================
+
+
+@baseUrl = http://127.0.0.1:8080
+@contentType = application/json
+
+
+### 0. 준비: 변수 세팅 + 메뉴 시드 확인
+# 이메일 3개: E1(주 시나리오), E2(주소 규칙), E3(전부 취소한 고객)
+# today = 서울 기준 오늘 날짜 (통계 조회용)
+< {%
+    const ts = Date.now();
+    client.global.set("email", "kdt" + ts + "a@test.com");
+    client.global.set("email2", "kdt" + ts + "b@test.com");
+    client.global.set("email3", "kdt" + ts + "c@test.com");
+    client.global.set("today", new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10));
+%}
+GET {{baseUrl}}/api/v1/menus
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("메뉴 id 1~4 존재", () => client.assert(
+        [1, 2, 3, 4].every(id => response.body.some(m => m.id === id && m.available === true))
+    ));
+%}
+
+
+### ============================================================
+### A11 주문 접수 POST /api/v1/orders
+### ============================================================
+
+### 1. 주문 접수 정상 (E1, 주소 앞뒤 공백 → trim, 클라이언트가 보낸 가격·상태 등은 무시)
+# 기대: 201, status=PLACED, cancelledAt=null, memo="", totalAmount=17000 (5000×2 + 7000×1)
+# address는 공백 제거 후 저장 / totalAmount·status·shippingDate·createdAt은 요청값을 쓰지 않음
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "  서울시 강남구 테헤란로 1  ",
+  "postcode": "06236",
+  "items": [
+    {"menuId": 1, "quantity": 2},
+    {"menuId": 2, "quantity": 1}
+  ],
+  "totalAmount": 1,
+  "status": "CANCELLED",
+  "shippingDate": "2000-01-01",
+  "createdAt": "2000-01-01T00:00:00+09:00"
+}
+
+> {%
+    client.global.set("orderId", response.body.id);
+    client.global.set("shippingDate", response.body.shippingDate);
+    client.test("201 Created", () => client.assert(response.status === 201));
+    client.test("status PLACED", () => client.assert(response.body.status === "PLACED"));
+    client.test("cancelledAt null", () => client.assert(response.body.cancelledAt === null));
+    client.test("memo 빈 문자열", () => client.assert(response.body.memo === ""));
+    client.test("address trimmed", () => client.assert(response.body.address === "서울시 강남구 테헤란로 1"));
+    client.test("totalAmount 17000 (요청값 무시)", () => client.assert(response.body.totalAmount === 17000));
+    client.test("shippingDate 요청값 무시", () => client.assert(response.body.shippingDate !== "2000-01-01"));
+    client.test("createdAt +09:00", () => client.assert(response.body.createdAt.endsWith("+09:00")));
+    client.test("items 2개 / 금액=단가×수량", () => {
+        client.assert(response.body.items.length === 2);
+        const i = response.body.items[0];
+        client.assert(i.menuId === 1 && i.unitPrice === 5000 && i.quantity === 2 && i.lineAmount === 10000);
+    });
+%}
+
+
+### 2. 같은 이메일·같은 주소로 한 번 더 주문 (E1, 배송 묶음에 합쳐질 주문)
+# 기대: 201, totalAmount=32000 (5000×1 + 9000×3)
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "06236",
+  "items": [
+    {"menuId": 1, "quantity": 1},
+    {"menuId": 3, "quantity": 3}
+  ]
+}
+
+> {%
+    client.global.set("orderId2", response.body.id);
+    client.test("201 Created", () => client.assert(response.status === 201));
+    client.test("totalAmount 32000", () => client.assert(response.body.totalAmount === 32000));
+    client.test("같은 배송일", () => client.assert(response.body.shippingDate === client.global.get("shippingDate")));
+%}
+
+
+### 3. 같은 이메일·배송일인데 주소가 다름
+# 기대: 409 ADDRESS_MISMATCH (기존 PLACED 주문이 있으므로)
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "부산시 해운대구 해운대로 1",
+  "postcode": "48099",
+  "items": [{"menuId": 1, "quantity": 1}]
+}
+
+> {%
+    client.test("409", () => client.assert(response.status === 409));
+    client.test("ADDRESS_MISMATCH", () => client.assert(response.body.code === "ADDRESS_MISMATCH"));
+%}
+
+
+### 4. 검증 실패: 이메일 형식 오류
+# 기대: 400 VALIDATION_ERROR, fieldErrors에 email
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "not-an-email",
+  "address": "서울시 강남구",
+  "postcode": "06236",
+  "items": [{"menuId": 1, "quantity": 1}]
+}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+    client.test("fieldErrors.email", () => client.assert("email" in response.body.fieldErrors));
+%}
+
+
+### 5. 검증 실패: 주소가 공백뿐
+# 기대: 400 VALIDATION_ERROR
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "    ",
+  "postcode": "06236",
+  "items": [{"menuId": 1, "quantity": 1}]
+}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 6. 검증 실패: 우편번호 4자리
+# 기대: 400 VALIDATION_ERROR
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "서울시 강남구",
+  "postcode": "0623",
+  "items": [{"menuId": 1, "quantity": 1}]
+}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 7. 검증 실패: 주문 항목이 빈 배열
+# 기대: 400 VALIDATION_ERROR
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "서울시 강남구",
+  "postcode": "06236",
+  "items": []
+}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 8. 검증 실패: 수량 21 (허용 1~20)
+# 기대: 400 VALIDATION_ERROR
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "서울시 강남구",
+  "postcode": "06236",
+  "items": [{"menuId": 1, "quantity": 21}]
+}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 9. 검증 실패: 수량 0
+# 기대: 400 VALIDATION_ERROR
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "서울시 강남구",
+  "postcode": "06236",
+  "items": [{"menuId": 1, "quantity": 0}]
+}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 10. 검증 실패: 같은 메뉴를 항목에 중복으로 담음
+# 기대: 400 VALIDATION_ERROR
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "서울시 강남구",
+  "postcode": "06236",
+  "items": [
+    {"menuId": 1, "quantity": 1},
+    {"menuId": 1, "quantity": 2}
+  ]
+}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 11. 검증 실패: JSON 문법 오류
+# 기대: 400 VALIDATION_ERROR
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{ "email": "{{email}}", "address":
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 12. 존재하지 않는 메뉴
+# 기대: 404 MENU_NOT_FOUND
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "06236",
+  "items": [{"menuId": 99999, "quantity": 1}]
+}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404));
+    client.test("MENU_NOT_FOUND", () => client.assert(response.body.code === "MENU_NOT_FOUND"));
+%}
+
+
+### 13. 오류가 겹치면 400이 먼저 (없는 메뉴 + 수량 오류)
+# 기대: 400 VALIDATION_ERROR (404가 아님)
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email}}",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "06236",
+  "items": [{"menuId": 99999, "quantity": 0}]
+}
+
+> {%
+    client.test("400 우선", () => client.assert(response.status === 400));
+%}
+
+
+### (참고) 판매 중지 메뉴 주문 → 409 MENU_UNAVAILABLE
+# .http 안에서 자동으로 만들기 어려워 직접 확인합니다.
+#  1) menu.http의 A21(PUT /api/v1/menus/{menuId}/availability)로 메뉴 4를 판매 중지로 바꿈
+#  2) 위 1번과 같은 요청에 {"menuId": 4, "quantity": 1}만 담아 주문 → 409 MENU_UNAVAILABLE 확인
+#  3) 확인 후 메뉴 4를 다시 판매 중으로 되돌릴 것 (그렇지 않으면 다른 테스트의 "메뉴 1~4 판매 중" 조건이 깨짐)
+
+
+### ============================================================
+### A12 이메일별 주문 GET /api/v1/orders?email={email}
+### ============================================================
+
+### 14. 이메일별 주문 목록
+# 기대: 200, E1 주문 2건, 접수 시각 내림차순 → 같으면 ID 내림차순 (orderId2가 먼저)
+GET {{baseUrl}}/api/v1/orders?email={{email}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("2건", () => client.assert(response.body.length === 2));
+    client.test("최신(ID 큰 것)이 먼저", () => client.assert(response.body[0].id === client.global.get("orderId2")));
+    client.test("fields", () => client.assert(
+        ["id", "createdAt", "shippingDate", "totalAmount", "status"].every(k => k in response.body[0])
+    ));
+%}
+
+
+### 15. 주문이 없는 이메일
+# 기대: 200, []
+GET {{baseUrl}}/api/v1/orders?email=nobody{{email2}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("빈 배열", () => client.assert(Array.isArray(response.body) && response.body.length === 0));
+%}
+
+
+### 16. 이메일 형식 오류
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/orders?email=abc
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 17. email 파라미터 누락
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/orders
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### ============================================================
+### A13 주문 상세 GET /api/v1/orders/{orderId}
+### ============================================================
+
+### 18. 주문 상세
+# 기대: 200, 1번에서 만든 주문과 같은 내용
+GET {{baseUrl}}/api/v1/orders/{{orderId}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("id 일치", () => client.assert(response.body.id === client.global.get("orderId")));
+    client.test("fields", () => client.assert(
+        ["id", "email", "address", "postcode", "createdAt", "shippingDate", "totalAmount", "items", "status", "cancelledAt", "memo"]
+            .every(k => k in response.body)
+    ));
+%}
+
+
+### 19. 없는 주문
+# 기대: 404 ORDER_NOT_FOUND
+GET {{baseUrl}}/api/v1/orders/99999999
+
+> {%
+    client.test("404", () => client.assert(response.status === 404));
+    client.test("ORDER_NOT_FOUND", () => client.assert(response.body.code === "ORDER_NOT_FOUND"));
+%}
+
+
+### 20. 숫자가 아닌 id
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/orders/abc
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 21. id 0
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/orders/0
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### ============================================================
+### A14 배송 묶음 GET /api/v1/delivery-batches?shippingDate={shippingDate}
+### ============================================================
+
+### 22. 배송 묶음 (아직 취소 전)
+# 기대: 200, E1의 묶음 1개: orderIds=[orderId, orderId2] 오름차순, orderCount=2
+#       totalQuantity=7 (2+1+1+3), totalAmount=49000 (17000+32000)
+#       items는 메뉴 ID 오름차순으로 합산: 메뉴1=3개, 메뉴2=1개, 메뉴3=3개
+GET {{baseUrl}}/api/v1/delivery-batches?shippingDate={{shippingDate}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    const b = response.body.find(x => x.email === client.global.get("email"));
+    client.test("E1 묶음 존재", () => client.assert(b !== undefined));
+    client.test("orderIds 오름차순", () => client.assert(
+        JSON.stringify(b.orderIds) === JSON.stringify([client.global.get("orderId"), client.global.get("orderId2")])
+    ));
+    client.test("orderCount 2", () => client.assert(b.orderCount === 2));
+    client.test("totalQuantity 7", () => client.assert(b.totalQuantity === 7));
+    client.test("totalAmount 49000", () => client.assert(b.totalAmount === 49000));
+    client.test("items 합산 (메뉴 1=3, 2=1, 3=3)", () => client.assert(
+        JSON.stringify(b.items.map(i => [i.menuId, i.quantity])) === JSON.stringify([[1, 3], [2, 1], [3, 3]])
+    ));
+    client.test("묶음이 이메일 오름차순", () => {
+        const emails = response.body.map(x => x.email);
+        client.assert(JSON.stringify(emails) === JSON.stringify([...emails].sort()));
+    });
+%}
+
+
+### 23. 주문이 없는 배송일
+# 기대: 200, []
+GET {{baseUrl}}/api/v1/delivery-batches?shippingDate=2099-12-31
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("빈 배열", () => client.assert(Array.isArray(response.body) && response.body.length === 0));
+%}
+
+
+### 24. 날짜 형식 오류
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/delivery-batches?shippingDate=abc
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 25. 허용 범위 밖 날짜 (2000-01-01 ~ 2099-12-31)
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/delivery-batches?shippingDate=1999-12-31
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### 26. shippingDate 파라미터 누락
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/delivery-batches
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### ============================================================
+### A22 주문 메모 수정 PUT /api/v1/orders/{orderId}/memo
+### ============================================================
+
+### 27. 메모 수정 (메모에 주소를 적어도 실제 배송지는 바뀌지 않음)
+# 기대: 200, memo만 바뀜 / address·postcode·totalAmount·status 그대로
+PUT {{baseUrl}}/api/v1/orders/{{orderId}}/memo
+Content-Type: {{contentType}}
+
+{
+  "memo": "배송지를 부산시 해운대구로 바꿔 주세요"
+}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("memo 변경", () => client.assert(response.body.memo === "배송지를 부산시 해운대구로 바꿔 주세요"));
+    client.test("address 유지", () => client.assert(response.body.address === "서울시 강남구 테헤란로 1"));
+    client.test("totalAmount·status 유지", () => client.assert(response.body.totalAmount === 17000 && response.body.status === "PLACED"));
+%}
+
+
+### 28. 메모 길이 초과 (201자, 허용 200자)
+# 기대: 400 VALIDATION_ERROR
+< {%
+    request.variables.set("longMemo", "a".repeat(201));
+%}
+PUT {{baseUrl}}/api/v1/orders/{{orderId}}/memo
+Content-Type: {{contentType}}
+
+{
+  "memo": "{{longMemo}}"
+}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 29. memo 필드 없음
+# 기대: 400 VALIDATION_ERROR
+PUT {{baseUrl}}/api/v1/orders/{{orderId}}/memo
+Content-Type: {{contentType}}
+
+{}
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### 30. 없는 주문의 메모 수정
+# 기대: 404 ORDER_NOT_FOUND
+PUT {{baseUrl}}/api/v1/orders/99999999/memo
+Content-Type: {{contentType}}
+
+{
+  "memo": "없는 주문"
+}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404));
+    client.test("ORDER_NOT_FOUND", () => client.assert(response.body.code === "ORDER_NOT_FOUND"));
+%}
+
+
+### ============================================================
+### A23 재주문 POST /api/v1/orders/{orderId}/reorder  (본문 없음)
+### ============================================================
+
+### 31. 재주문 (메모가 있는 원본으로)
+# 기대: 201, 새 id / status=PLACED / cancelledAt=null / memo="" (원본 메모는 복사하지 않음)
+#       이메일·주소·우편번호·메뉴·수량은 원본과 같음 / 배송일은 재주문 시각 기준
+POST {{baseUrl}}/api/v1/orders/{{orderId}}/reorder
+
+> {%
+    client.global.set("reorderId", response.body.id);
+    client.test("201 Created", () => client.assert(response.status === 201));
+    client.test("새 id", () => client.assert(response.body.id !== client.global.get("orderId")));
+    client.test("PLACED / cancelledAt null / memo 빈 문자열", () => client.assert(
+        response.body.status === "PLACED" && response.body.cancelledAt === null && response.body.memo === ""
+    ));
+    client.test("원본과 같은 이메일·주소", () => client.assert(
+        response.body.email === client.global.get("email") && response.body.address === "서울시 강남구 테헤란로 1"
+    ));
+    client.test("항목 같음 (메뉴1×2, 메뉴2×1)", () => client.assert(
+        JSON.stringify(response.body.items.map(i => [i.menuId, i.quantity])) === JSON.stringify([[1, 2], [2, 1]])
+    ));
+    client.test("totalAmount 17000", () => client.assert(response.body.totalAmount === 17000));
+%}
+
+
+### 32. 원본 주문은 바뀌지 않음
+# 기대: 200, 원본의 memo 그대로, status=PLACED
+GET {{baseUrl}}/api/v1/orders/{{orderId}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("원본 memo 유지", () => client.assert(response.body.memo === "배송지를 부산시 해운대구로 바꿔 주세요"));
+    client.test("원본 status 유지", () => client.assert(response.body.status === "PLACED"));
+%}
+
+
+### 33. 없는 주문 재주문
+# 기대: 404 ORDER_NOT_FOUND
+POST {{baseUrl}}/api/v1/orders/99999999/reorder
+
+> {%
+    client.test("404", () => client.assert(response.status === 404));
+    client.test("ORDER_NOT_FOUND", () => client.assert(response.body.code === "ORDER_NOT_FOUND"));
+%}
+
+
+### ============================================================
+### A16 주문 취소 POST /api/v1/orders/{orderId}/cancel  (본문 없음)
+### 취소 마감 = 저장된 배송일 서울 시각 14:00:00. 마감 전 PLACED만 취소 가능
+### ============================================================
+
+### 34. 주문 취소 (orderId2)
+# 기대: 200, status=CANCELLED, cancelledAt 채워짐 / 주문·항목·금액은 그대로 (totalAmount=32000)
+POST {{baseUrl}}/api/v1/orders/{{orderId2}}/cancel
+
+> {%
+    client.global.set("cancelledAt", response.body.cancelledAt);
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("CANCELLED", () => client.assert(response.body.status === "CANCELLED"));
+    client.test("cancelledAt 있음", () => client.assert(response.body.cancelledAt !== null));
+    client.test("금액·항목 유지", () => client.assert(response.body.totalAmount === 32000 && response.body.items.length === 2));
+%}
+
+
+### 35. 이미 취소한 주문을 다시 취소
+# 기대: 200, 최초 cancelledAt 그대로 (마감과 관계없이)
+POST {{baseUrl}}/api/v1/orders/{{orderId2}}/cancel
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("CANCELLED 유지", () => client.assert(response.body.status === "CANCELLED"));
+    client.test("cancelledAt 최초 값 유지", () => client.assert(response.body.cancelledAt === client.global.get("cancelledAt")));
+%}
+
+
+### 36. 없는 주문 취소
+# 기대: 404 ORDER_NOT_FOUND
+POST {{baseUrl}}/api/v1/orders/99999999/cancel
+
+> {%
+    client.test("404", () => client.assert(response.status === 404));
+    client.test("ORDER_NOT_FOUND", () => client.assert(response.body.code === "ORDER_NOT_FOUND"));
+%}
+
+
+### 37. 숫자가 아닌 id로 취소
+# 기대: 400 VALIDATION_ERROR
+POST {{baseUrl}}/api/v1/orders/abc/cancel
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### 38. 취소된 주문도 메모 수정 가능 (memo만 바뀜)
+# 기대: 200, status는 CANCELLED 그대로, memo 변경
+PUT {{baseUrl}}/api/v1/orders/{{orderId2}}/memo
+Content-Type: {{contentType}}
+
+{
+  "memo": "취소된 주문의 메모"
+}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("memo 변경", () => client.assert(response.body.memo === "취소된 주문의 메모"));
+    client.test("CANCELLED 유지", () => client.assert(response.body.status === "CANCELLED"));
+    client.test("cancelledAt 유지", () => client.assert(response.body.cancelledAt === client.global.get("cancelledAt")));
+%}
+
+
+### 39. 취소된 주문도 재주문 가능
+# 기대: 201, 새 주문은 PLACED / cancelledAt=null / memo="" / totalAmount=32000
+POST {{baseUrl}}/api/v1/orders/{{orderId2}}/reorder
+
+> {%
+    client.global.set("reorderId2", response.body.id);
+    client.test("201 Created", () => client.assert(response.status === 201));
+    client.test("PLACED / cancelledAt null / memo 빈 문자열", () => client.assert(
+        response.body.status === "PLACED" && response.body.cancelledAt === null && response.body.memo === ""
+    ));
+    client.test("totalAmount 32000", () => client.assert(response.body.totalAmount === 32000));
+%}
+
+
+### 40. 취소 후 이메일별 목록에 취소 주문도 포함
+# 기대: 200, E1 주문 4건 (orderId, orderId2(CANCELLED), reorderId, reorderId2), ID 내림차순
+GET {{baseUrl}}/api/v1/orders?email={{email}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("4건", () => client.assert(response.body.length === 4));
+    client.test("취소 주문 포함", () => client.assert(
+        response.body.some(o => o.id === client.global.get("orderId2") && o.status === "CANCELLED")
+    ));
+    client.test("ID 내림차순 (같은 접수 시각이면)", () => client.assert(response.body[0].id === client.global.get("reorderId2")));
+%}
+
+
+### 41. 취소 후 배송 묶음 (취소 주문 제외, 재주문 포함)
+# 기대: E1 묶음 orderIds=[orderId, reorderId, reorderId2] 오름차순, orderCount=3
+#       totalQuantity=10 (3+3+4), totalAmount=66000 (17000+17000+32000)
+#       items: 메뉴1=5개, 메뉴2=2개, 메뉴3=3개
+# (재주문이 14시 경계를 넘어 배송일이 달라졌다면 이 테스트는 실패할 수 있음)
+GET {{baseUrl}}/api/v1/delivery-batches?shippingDate={{shippingDate}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    const b = response.body.find(x => x.email === client.global.get("email"));
+    client.test("E1 묶음 존재", () => client.assert(b !== undefined));
+    client.test("취소 주문 제외 + orderIds 오름차순", () => client.assert(
+        JSON.stringify(b.orderIds) ===
+        JSON.stringify([client.global.get("orderId"), client.global.get("reorderId"), client.global.get("reorderId2")])
+    ));
+    client.test("orderCount 3", () => client.assert(b.orderCount === 3));
+    client.test("totalQuantity 10", () => client.assert(b.totalQuantity === 10));
+    client.test("totalAmount 66000", () => client.assert(b.totalAmount === 66000));
+    client.test("items 합산 (메뉴 1=5, 2=2, 3=3)", () => client.assert(
+        JSON.stringify(b.items.map(i => [i.menuId, i.quantity])) === JSON.stringify([[1, 5], [2, 2], [3, 3]])
+    ));
+%}
+
+
+### ============================================================
+### 주소 규칙: 기존 주문이 모두 취소되면 새 주소로 주문 가능 (E2)
+### ============================================================
+
+### 42. E2 첫 주문 (주소 A)
+# 기대: 201
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email2}}",
+  "address": "서울시 마포구 월드컵로 1",
+  "postcode": "03925",
+  "items": [{"menuId": 4, "quantity": 1}]
+}
+
+> {%
+    client.global.set("e2OrderId", response.body.id);
+    client.test("201 Created", () => client.assert(response.status === 201));
+%}
+
+
+### 43. E2 주문 취소
+# 기대: 200, CANCELLED
+POST {{baseUrl}}/api/v1/orders/{{e2OrderId}}/cancel
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("CANCELLED", () => client.assert(response.body.status === "CANCELLED"));
+%}
+
+
+### 44. E2 새 주소(주소 B)로 주문
+# 기대: 201 (기존 주문이 모두 취소됐으므로 ADDRESS_MISMATCH가 아님)
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email2}}",
+  "address": "경기도 성남시 분당구 판교로 1",
+  "postcode": "13494",
+  "items": [{"menuId": 4, "quantity": 2}]
+}
+
+> {%
+    client.test("201 Created", () => client.assert(response.status === 201));
+    client.test("새 주소 저장", () => client.assert(response.body.address === "경기도 성남시 분당구 판교로 1"));
+%}
+
+
+### 45. E2 새 주소 주문이 PLACED인 상태에서 또 다른 주소(주소 A)
+# 기대: 409 ADDRESS_MISMATCH (이제 PLACED 주문이 주소 B로 있음)
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email2}}",
+  "address": "서울시 마포구 월드컵로 1",
+  "postcode": "03925",
+  "items": [{"menuId": 4, "quantity": 1}]
+}
+
+> {%
+    client.test("409", () => client.assert(response.status === 409));
+    client.test("ADDRESS_MISMATCH", () => client.assert(response.body.code === "ADDRESS_MISMATCH"));
+%}
+
+
+### 46. E3 주문 후 취소 (전부 취소한 고객 → 고객 통계에서 PLACED 0 확인용)
+# 기대: 201
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "{{email3}}",
+  "address": "대전시 유성구 대학로 99",
+  "postcode": "34141",
+  "items": [{"menuId": 2, "quantity": 5}]
+}
+
+> {%
+    client.global.set("e3OrderId", response.body.id);
+    client.test("201 Created", () => client.assert(response.status === 201));
+%}
+
+
+### 47. E3 주문 취소
+# 기대: 200, CANCELLED
+POST {{baseUrl}}/api/v1/orders/{{e3OrderId}}/cancel
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("CANCELLED", () => client.assert(response.body.status === "CANCELLED"));
+%}
+
+
+### ============================================================
+### A17 접수일별 주문 통계 GET /api/v1/statistics/orders?date={date}
+### date는 배송일이 아니라 서울 기준 접수일. 전체 주문 수는 취소 포함, 수량·금액은 PLACED만
+### ============================================================
+
+### 48. 오늘 접수 주문 통계
+# 기대: 200, date=오늘 / orderCount = placedOrderCount + cancelledOrderCount
+#       cancelledOrderCount ≥ 3 (E1의 orderId2, E2, E3)  /  placedOrderCount ≥ 5
+# (오늘 다른 주문도 DB에 있을 수 있어 정확한 개수 대신 관계로 확인)
+GET {{baseUrl}}/api/v1/statistics/orders?date={{today}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("date 일치", () => client.assert(response.body.date === client.global.get("today")));
+    client.test("fields", () => client.assert(
+        ["date", "orderCount", "placedOrderCount", "cancelledOrderCount", "totalQuantity", "totalAmount"].every(k => k in response.body)
+    ));
+    client.test("전체 = PLACED + CANCELLED", () => client.assert(
+        response.body.orderCount === response.body.placedOrderCount + response.body.cancelledOrderCount
+    ));
+    client.test("취소 3건 이상 / PLACED 5건 이상", () => client.assert(
+        response.body.cancelledOrderCount >= 3 && response.body.placedOrderCount >= 5
+    ));
+    client.test("수량·금액은 PLACED 기준 (양수)", () => client.assert(response.body.totalQuantity > 0 && response.body.totalAmount > 0));
+%}
+
+
+### 49. 주문이 없는 날짜
+# 기대: 200, 객체 (null이나 404가 아님): date=2099-12-31, 나머지 전부 0
+GET {{baseUrl}}/api/v1/statistics/orders?date=2099-12-31
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("date 그대로", () => client.assert(response.body.date === "2099-12-31"));
+    client.test("전부 0", () => client.assert(
+        response.body.orderCount === 0 && response.body.placedOrderCount === 0 && response.body.cancelledOrderCount === 0
+        && response.body.totalQuantity === 0 && response.body.totalAmount === 0
+    ));
+%}
+
+
+### 50. 날짜 형식 오류
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/statistics/orders?date=abc
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+    client.test("VALIDATION_ERROR", () => client.assert(response.body.code === "VALIDATION_ERROR"));
+%}
+
+
+### 51. date 파라미터 누락
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/statistics/orders
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### ============================================================
+### A18 접수일별 메뉴 통계 GET /api/v1/statistics/menus?date={date}
+### ============================================================
+
+### 52. 오늘 메뉴 통계
+# 기대: 200, 배열 / 메뉴 ID → 단가 → 메뉴명 오름차순 / 각 항목에 menuId·menuName·unitPrice·totalQuantity·totalAmount
+#       totalAmount = unitPrice × totalQuantity (PLACED만 집계, 취소 주문은 제외)
+GET {{baseUrl}}/api/v1/statistics/menus?date={{today}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("배열이고 비어 있지 않음", () => client.assert(Array.isArray(response.body) && response.body.length > 0));
+    client.test("fields", () => client.assert(
+        ["menuId", "menuName", "unitPrice", "totalQuantity", "totalAmount"].every(k => k in response.body[0])
+    ));
+    client.test("금액 = 단가 × 수량", () => client.assert(
+        response.body.every(m => m.totalAmount === m.unitPrice * m.totalQuantity)
+    ));
+    client.test("메뉴 ID → 단가 → 메뉴명 오름차순", () => {
+        const ok = response.body.every((m, i) => {
+            if (i === 0) return true;
+            const p = response.body[i - 1];
+            if (p.menuId !== m.menuId) return p.menuId < m.menuId;
+            if (p.unitPrice !== m.unitPrice) return p.unitPrice < m.unitPrice;
+            return p.menuName <= m.menuName;
+        });
+        client.assert(ok);
+    });
+%}
+
+
+### 53. 주문이 없는 날짜
+# 기대: 200, []
+GET {{baseUrl}}/api/v1/statistics/menus?date=2099-12-31
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("빈 배열", () => client.assert(Array.isArray(response.body) && response.body.length === 0));
+%}
+
+
+### 54. 날짜 형식 오류
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/statistics/menus?date=2026-13-45
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### ============================================================
+### A24 접수일별 고객 통계 GET /api/v1/statistics/customers?date={date}
+### ============================================================
+
+### 55. 오늘 고객 통계
+# 기대: 200, 이메일 오름차순
+#   E1: orderCount=4, placed=3, cancelled=1, totalQuantity=10, totalAmount=66000
+#   E3: orderCount=1, placed=0, cancelled=1, totalQuantity=0, totalAmount=0  (전부 취소한 고객도 포함)
+GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("이메일 오름차순", () => {
+        const emails = response.body.map(c => c.email);
+        client.assert(JSON.stringify(emails) === JSON.stringify([...emails].sort()));
+    });
+    const e1 = response.body.find(c => c.email === client.global.get("email"));
+    const e3 = response.body.find(c => c.email === client.global.get("email3"));
+    client.test("E1 집계", () => client.assert(
+        e1 !== undefined && e1.orderCount === 4 && e1.placedOrderCount === 3 && e1.cancelledOrderCount === 1
+        && e1.totalQuantity === 10 && e1.totalAmount === 66000
+    ));
+    client.test("E3 (전부 취소) 포함, PLACED 수량·금액 0", () => client.assert(
+        e3 !== undefined && e3.orderCount === 1 && e3.placedOrderCount === 0 && e3.cancelledOrderCount === 1
+        && e3.totalQuantity === 0 && e3.totalAmount === 0
+    ));
+    client.test("date 필드", () => client.assert(response.body.every(c => c.date === client.global.get("today"))));
+%}
+
+
+### 56. 주문이 없는 날짜
+# 기대: 200, []
+GET {{baseUrl}}/api/v1/statistics/customers?date=2099-12-31
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("빈 배열", () => client.assert(Array.isArray(response.body) && response.body.length === 0));
+%}
+
+
+### 57. date 파라미터 누락
+# 기대: 400 VALIDATION_ERROR
+GET {{baseUrl}}/api/v1/statistics/customers
+
+> {%
+    client.test("400", () => client.assert(response.status === 400));
+%}
+
+
+### ============================================================
+### (참고) 취소 마감 후 취소 → 409 ORDER_NOT_CANCELLABLE
+### 마감 = 저장된 배송일의 서울 시각 14:00:00 (정각부터 취소 불가)
+### 서버 시계에 달려 있어 .http만으로는 재현하기 어려워 직접 확인합니다.
+###  방법 1) 새 주문을 만든 뒤, DB에서 그 주문의 shipping_date를 과거 날짜로 UPDATE
+###          (테이블명은 Order 엔티티의 @Table 이름 확인)
+###          → POST /api/v1/orders/{id}/cancel 호출 → 409 ORDER_NOT_CANCELLABLE
+###  방법 2) PC 시계를 마감 이후로 바꾼 뒤 서버를 재시작해서 취소 호출
+###  확인할 것: 409 이후에도 주문 상태는 PLACED 그대로, cancelledAt=null
+### ============================================================
