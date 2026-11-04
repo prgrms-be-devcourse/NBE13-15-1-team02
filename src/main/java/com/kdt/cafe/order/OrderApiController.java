@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 //A11
@@ -19,7 +20,7 @@ import java.util.List;
 //A23
 //A24
 @RestController
-@RequestMapping("/api/v1/orders")
+@RequestMapping("/api/v1")
 public class OrderApiController {
     private final OrderService orderService;
 
@@ -30,7 +31,7 @@ public class OrderApiController {
 
     //A11   주문접수 201 · Order
     //POST /api/v1/orders
-    @PostMapping()
+    @PostMapping("/orders")
     public ResponseEntity<OrderResponse> create(@Valid @RequestBody OrderCreateRequest request){
         OrderResponse order = this.orderService.createOrder(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(order);
@@ -38,31 +39,41 @@ public class OrderApiController {
 
     //A12   이메일별 주문 200 · OrderSummary[]
     //GET /api/v1/orders?email={email}
-    @GetMapping()
+    @GetMapping("/orders")
     public List<OrderSummaryResponse> findByEmail(@RequestParam("email") String email){
         return this.orderService.findOrdersByEmail(email);
     }
 
     //A13   주문 상세 200 · Order
     //GET /api/v1/orders/{orderId}
-    @GetMapping("/{orderId}")
+    @GetMapping("/orders/{orderId}")
     public OrderResponse findOrder(@PathVariable("orderId") Long id){
         return this.orderService.findOrder(id);
     }
 
     //A14   배송 묶음 200 · DeliveryBatch[]
     //GET /api/v1/delivery-batches?shippingDate={shippingDate}
-    @GetMapping()
-    public List<DeliveryBatchResponse> findDeliveryBatches()
+    @GetMapping("/delivery-batches")
+    public List<DeliveryBatchResponse> findDeliveryBatches(@RequestParam("shippingDate")LocalDate shippingDate) {
+        return this.orderService.findDeliveryBatches(shippingDate);
+    }
 
 
     //A16   주문 취소 200 · 전체 Order
     //POST /api/v1/orders/{orderId}/cancel
+    @PostMapping("/ordrs/{orderId}/canel")
+    public OrderResponse cancelOrder(@PathVariable("orderId")Long orderId){
+        return this.orderService.cancelOrder(orderId);
+    }
+
 
 
     //A17   접수일별 주문 통계 200 · OrderStatistics
     //GET /api/v1/statistics/orders?date={date}
+    @GetMapping("/statistics/orders")
+    public OrderStatisticsResponse getOrderStatistics(){
 
+    }
 
     //A18   접수일별 메뉴 통계 200 · MenuStatistics[]
     //GET /api/v1/statistics/menus?date={date}
