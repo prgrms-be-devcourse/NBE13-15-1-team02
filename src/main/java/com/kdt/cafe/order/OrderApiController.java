@@ -61,13 +61,19 @@ public class OrderApiController {
 
     //A16   주문 취소 200 · 전체 Order
     //POST /api/v1/orders/{orderId}/cancel
-
+    @PostMapping("/ordrs/{orderId}/canel")
+    public OrderResponse cancelOrder(@PathVariable("orderId")Long orderId){
+        return this.orderService.cancelOrder(orderId);
+    }
 
 
 
     //A17   접수일별 주문 통계 200 · OrderStatistics
     //GET /api/v1/statistics/orders?date={date}
+    @GetMapping("/statistics/orders")
+    public OrderStatisticsResponse getOrderStatistics(){
 
+    }
 
     //A18   접수일별 메뉴 통계 200 · MenuStatistics[]
     //GET /api/v1/statistics/menus?date={date}
