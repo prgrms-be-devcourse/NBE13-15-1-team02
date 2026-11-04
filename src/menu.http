@@ -1,0 +1,331 @@
+### ============================================================
+### 메뉴 API 확인 (A06~A10, A19~A21)
+### 실행 순서: 1 → 2 → 3 → ... 순서대로 (등록 응답의 id를 newMenuId로 자동 저장)
+### 준비 데이터: 초기 데이터(싱글오리진 id=1, 블렌드 id=2, 메뉴 4개 싱글오리진 소속 id=1~4)
+### 변수: baseUrl만 고정. 등록 응답의 id를 newMenuId로 자동 저장해 이후 요청에 사용
+### ============================================================
+
+### ============================================================
+### 사용 더미 데이터
+### INSERT IGNORE INTO category (name) VALUES ('싱글오리진'), ('블렌드');
+###
+###  INSERT IGNORE INTO menu (category_id, name, price, description, available) VALUES
+###  ((SELECT id FROM category WHERE name = '싱글오리진'), 'Columbia Nariñó', 5000, '콜롬비아 나리뇨 원두를 담은 커피빈 패키지입니다.', TRUE),
+###  ((SELECT id FROM category WHERE name = '싱글오리진'), 'Brazil Serra Do Caparaó', 7000, '브라질 세하 두 카파라오 원두를 담은 커피빈 패키지입니다.', TRUE),
+###  ((SELECT id FROM category WHERE name = '싱글오리진'), 'Columbia Quindío (White Wine Extended Fermentation)', 9000, '콜롬비아 킨디오 원두를 담은 커피빈 패키지입니다.', TRUE),
+###  ((SELECT id FROM category WHERE name = '싱글오리진'), 'Ethiopia Sidamo', 11000, '에티오피아 시다모 원두를 담은 커피빈 패키지입니다.', TRUE);
+### ==============================================================
+
+
+@baseUrl = http://127.0.0.1:8080
+@contentType = application/json
+
+### 1. A06 전체 메뉴
+# 기대: 200, Menu[] 4개, ID 오름차순 (1→2→3→4)
+# 각 항목에 id·categoryId·name·price·description·available 모두 포함
+GET {{baseUrl}}/api/v1/menus
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("4 menus", () => client.assert(response.body.length === 4));
+    client.test("id ascending", () => client.assert(response.body[0].id < response.body[1].id));
+    client.test("fields", () => client.assert(
+        ["id", "categoryId", "name", "price", "description", "available"].every(k => k in response.body[0])
+    ));
+%}
+
+### 2. A07 메뉴 상세 (존재하는 ID)
+# 기대: 200, {id:1, categoryId:1, name:"Columbia Nariñó", price:5000, description:"...", available:true}
+GET {{baseUrl}}/api/v1/menus/1
+
+### 3. A08 메뉴 등록 (앞뒤 공백 포함 → trim되어 저장)
+# 기대: 201, {id:<DB 생성 ID>, categoryId:1, name:"Test Bean", price:6000, description:"테스트 원두", available:true}
+# 새 메뉴는 available=true  /  공백 없이 저장되는지 확인
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 1,
+  "name": "  Test Bean  ",
+  "price": 6000,
+  "description": "  테스트 원두  "
+}
+
+> {%
+    client.global.set("newMenuId", response.body.id);
+    client.test("201 Created", () => client.assert(response.status === 201));
+    client.test("name trimmed", () => client.assert(response.body.name === "Test Bean"));
+    client.test("description trimmed", () => client.assert(response.body.description === "테스트 원두"));
+    client.test("available true", () => client.assert(response.body.available === true));
+%}
+
+### 4. A07 메뉴 상세 (방금 등록한 ID)
+# 기대: 200, {id:{{newMenuId}}, name:"Test Bean", available:true}
+GET {{baseUrl}}/api/v1/menus/{{newMenuId}}
+
+### 5. A09 메뉴 일반 수정 (카테고리·이름·가격·설명 모두 변경)
+# 기대: 200, {id:{{newMenuId}}, categoryId:2, name:"Test Bean Updated", price:6500, description:"수정된 설명", available:true}
+PUT {{baseUrl}}/api/v1/menus/{{newMenuId}}
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 2,
+  "name": "Test Bean Updated",
+  "price": 6500,
+  "description": "수정된 설명"
+}
+
+> {%
+    client.test("200 OK", () => client.assert(response.status === 200));
+    client.test("categoryId=2", () => client.assert(response.body.categoryId === 2));
+    client.test("name updated", () => client.assert(response.body.name === "Test Bean Updated"));
+    client.test("price updated", () => client.assert(response.body.price === 6500));
+%}
+
+### 6. A21 판매 여부 변경 (판매 중단)
+# 기대: 200, 전체 Menu 응답, available:false (다른 필드는 그대로)
+PUT {{baseUrl}}/api/v1/menus/{{newMenuId}}/availability
+Content-Type: {{contentType}}
+
+{
+  "available": false
+}
+
+> {%
+    client.test("200 OK", () => client.assert(response.status === 200));
+    client.test("available false", () => client.assert(response.body.available === false));
+    client.test("full menu", () => client.assert(response.body.name === "Test Bean Updated"));
+%}
+
+### 7. A09 일반 수정 후에도 available 유지 확인
+# 기대: 200, available:false 그대로 (일반 수정은 기존 available을 유지)
+PUT {{baseUrl}}/api/v1/menus/{{newMenuId}}
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 2,
+  "name": "Test Bean Updated",
+  "price": 7000,
+  "description": "수정된 설명"
+}
+
+> {%
+    client.test("price 7000", () => client.assert(response.body.price === 7000));
+    client.test("available kept false", () => client.assert(response.body.available === false));
+%}
+
+### 8. A19 판매 중 메뉴 (판매 중단한 메뉴는 제외)
+# 기대: 200, Menu[] 4개 (id 1~4), {{newMenuId}}는 없음, ID 오름차순
+GET {{baseUrl}}/api/v1/menus/available
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("only available", () => client.assert(response.body.every(m => m.available === true)));
+    client.test("new menu excluded", () => client.assert(!response.body.some(m => m.id == client.global.get("newMenuId"))));
+%}
+
+### 9. A21 판매 여부 변경 (판매 재개)
+# 기대: 200, available:true
+PUT {{baseUrl}}/api/v1/menus/{{newMenuId}}/availability
+Content-Type: {{contentType}}
+
+{
+  "available": true
+}
+
+### 10. A19 판매 중 메뉴 (재개 후 다시 포함)
+# 기대: 200, Menu[] 5개, {{newMenuId}} 포함, ID 오름차순
+GET {{baseUrl}}/api/v1/menus/available
+
+> {%
+    client.test("new menu included", () => client.assert(response.body.some(m => m.id == client.global.get("newMenuId"))));
+%}
+
+### 11. A20 메뉴명 검색 (부분 일치)
+# 기대: 200, Menu[] 2개 (Columbia Nariñó, Columbia Quindío), ID 오름차순
+GET {{baseUrl}}/api/v1/menus/search?keyword=Columbia
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("2 results", () => client.assert(response.body.length === 2));
+    client.test("name contains keyword", () => client.assert(response.body.every(m => m.name.includes("Columbia"))));
+%}
+
+### 12. A20 메뉴명 검색 (결과 없음)
+# 기대: 200, []  ← 404가 나오면 안 됨
+GET {{baseUrl}}/api/v1/menus/search?keyword=zzzzzz
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("empty array", () => client.assert(Array.isArray(response.body) && response.body.length === 0));
+%}
+
+### 13. A10 메뉴 삭제 (주문에 사용 안 한 메뉴)
+# 기대: 204, 빈 본문
+DELETE {{baseUrl}}/api/v1/menus/{{newMenuId}}
+
+> {%
+    client.test("204 No Content", () => client.assert(response.status === 204));
+    client.test("empty body", () => client.assert(!response.body));
+%}
+
+### 14. A07 삭제 확인
+# 기대: 404, {code:"MENU_NOT_FOUND", message:"메뉴를 찾을 수 없습니다.", fieldErrors:{}}
+GET {{baseUrl}}/api/v1/menus/{{newMenuId}}
+
+
+### ============================================================
+### 오류 사례
+### ============================================================
+
+### 15. [400] 입력 오류 - 이름 공백만 (NotBlank 성격 / trim 후 길이 0)
+# 기대: 400, {code:"VALIDATION_ERROR", message:"입력값을 확인해 주세요.", fieldErrors:{name:"..."}}
+# 200/201이 나오면 name의 Size(min=1)가 trim 후에 검사되는지 확인
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 1,
+  "name": "   ",
+  "price": 5000,
+  "description": "공백 이름"
+}
+
+### 16. [400] 입력 오류 - 가격 0 (Min(1))
+# 기대: 400, fieldErrors에 price
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 1,
+  "name": "가격오류",
+  "price": 0,
+  "description": "가격 0"
+}
+
+### 17. [400] 입력 오류 - 가격 1,000,001 (Max(1000000))
+# 기대: 400, fieldErrors에 price
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 1,
+  "name": "가격초과",
+  "price": 1000001,
+  "description": "가격 초과"
+}
+
+### 18. [400] 입력 오류 - categoryId 누락 (NotNull)
+# 기대: 400, fieldErrors에 categoryId
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "name": "카테고리없음",
+  "price": 5000,
+  "description": "categoryId 없음"
+}
+
+### 19. [400] 입력 오류 - description 누락 (네 필드 모두 필수)
+# 기대: 400, fieldErrors에 description
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 1,
+  "name": "설명없음",
+  "price": 5000
+}
+
+### 20. [400] 입력 오류 - 이름 101자 (Size max=100)
+# 기대: 400, fieldErrors에 name
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 1,
+  "name": "가나다라마바사아자차가나다라마바사아자차가나다라마바사아자차가나다라마바사아자차가나다라마바사아자차가나다라마바사아자차가나다라마바사아자차가나다라마바사아자차가나다라마바사아자차가나다라마바사아자차가",
+  "price": 5000,
+  "description": "이름 101자"
+}
+
+### 21. [400] 입력 오류 - 판매 여부 누락 (NotNull)
+# 기대: 400, fieldErrors에 available
+PUT {{baseUrl}}/api/v1/menus/1/availability
+Content-Type: {{contentType}}
+
+{}
+
+### 22. [400] 경로 ID 문자열 (타입 불일치)
+# 기대: 400
+GET {{baseUrl}}/api/v1/menus/abc
+
+### 23. [400] JSON 문법 오류 → fieldErrors {}
+# 기대: 400
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{ "categoryId": 1, "name": "문법오류"
+
+### 24. [400] 검색어 파라미터 누락
+# 기대: 400 (500이 나오면 keyword 누락 핸들러 없음)
+GET {{baseUrl}}/api/v1/menus/search
+
+### 25. [404] 존재하지 않는 메뉴 상세
+# 기대: 404, {code:"MENU_NOT_FOUND", message:"메뉴를 찾을 수 없습니다.", fieldErrors:{}}
+GET {{baseUrl}}/api/v1/menus/99999
+
+### 26. [404] 메뉴 등록 - 존재하지 않는 카테고리
+# 기대: 404, {code:"CATEGORY_NOT_FOUND", message:"카테고리를 찾을 수 없습니다.", fieldErrors:{}}
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 99999,
+  "name": "없는카테고리",
+  "price": 5000,
+  "description": "카테고리 없음"
+}
+
+### 27. [404] 메뉴 수정 - 존재하지 않는 메뉴
+# 기대: 404, {code:"MENU_NOT_FOUND", ...}
+PUT {{baseUrl}}/api/v1/menus/99999
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 1,
+  "name": "없는메뉴",
+  "price": 5000,
+  "description": "메뉴 없음"
+}
+
+### 28. [404] 메뉴 수정 - 존재하지 않는 카테고리
+# 기대: 404, {code:"CATEGORY_NOT_FOUND", ...}
+PUT {{baseUrl}}/api/v1/menus/1
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 99999,
+  "name": "Columbia Nariñó",
+  "price": 5000,
+  "description": "카테고리 없음"
+}
+
+### 29. [404] 판매 여부 변경 - 존재하지 않는 메뉴
+# 기대: 404, {code:"MENU_NOT_FOUND", ...}
+PUT {{baseUrl}}/api/v1/menus/99999/availability
+Content-Type: {{contentType}}
+
+{
+  "available": false
+}
+
+### 30. [404] 존재하지 않는 메뉴 삭제
+# 기대: 404, {code:"MENU_NOT_FOUND", ...}
+DELETE {{baseUrl}}/api/v1/menus/99999
+
+### 31. [409] 업무 위반 - 주문에 사용된 메뉴 삭제
+# 준비: 먼저 order.http 등으로 메뉴 id=1을 포함한 주문을 1건 이상 접수 (취소된 주문이어도 됨)
+# 기대: 409, {code:"MENU_IN_USE", message:"주문에 사용된 메뉴는 삭제할 수 없습니다.", fieldErrors:{}}
+# 204가 나오면 OrderItemRepository.existsByMenuId 검사 누락 (※ 지워지면 시드 데이터가 사라지니 주문 먼저 확인!)
+DELETE {{baseUrl}}/api/v1/menus/1

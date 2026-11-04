@@ -1,0 +1,209 @@
+### ============================================================
+### 카테고리 API 확인 (A01~A05)
+### 실행 순서: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
+### 준비 데이터: 초기 데이터(싱글오리진 id=1, 블렌드 id=2, 메뉴 4개 싱글오리진 소속)
+### 변수: baseUrl만 고정. 등록 응답의 id를 newCategoryId로 자동 저장해 이후 요청에 사용
+### ============================================================
+
+### ============================================================
+### 사용 더미 데이터
+### INSERT IGNORE INTO category (name) VALUES ('싱글오리진'), ('블렌드');
+###
+###  INSERT IGNORE INTO menu (category_id, name, price, description, available) VALUES
+###  ((SELECT id FROM category WHERE name = '싱글오리진'), 'Columbia Nariñó', 5000, '콜롬비아 나리뇨 원두를 담은 커피빈 패키지입니다.', TRUE),
+###  ((SELECT id FROM category WHERE name = '싱글오리진'), 'Brazil Serra Do Caparaó', 7000, '브라질 세하 두 카파라오 원두를 담은 커피빈 패키지입니다.', TRUE),
+###  ((SELECT id FROM category WHERE name = '싱글오리진'), 'Columbia Quindío (White Wine Extended Fermentation)', 9000, '콜롬비아 킨디오 원두를 담은 커피빈 패키지입니다.', TRUE),
+###  ((SELECT id FROM category WHERE name = '싱글오리진'), 'Ethiopia Sidamo', 11000, '에티오피아 시다모 원두를 담은 커피빈 패키지입니다.', TRUE);
+### ==============================================================
+
+
+
+@baseUrl = http://127.0.0.1:8080
+@contentType = application/json
+
+### 1. A01 카테고리 목록
+# 기대: 200, [{id:1, name:"싱글오리진"}, {id:2, name:"블렌드"}] ID 오름차순
+GET {{baseUrl}}/api/v1/categories
+
+### 2. A02 카테고리 상세 (존재하는 ID)
+# 기대: 200, {id:1, name:"싱글오리진"}
+GET {{baseUrl}}/api/v1/categories/1
+
+### 3. A03 카테고리 등록 (앞뒤 공백 포함 → trim되어 저장)
+# 기대: 201, {id:<DB 생성 ID>, name:"디카페인"}  ← 공백 없이 저장되는지 확인
+POST {{baseUrl}}/api/v1/categories
+Content-Type: {{contentType}}
+
+{
+  "name": "  디카페인  "
+}
+
+> {%
+    client.global.set("newCategoryId", response.body.id);
+    client.test("201 Created", () => client.assert(response.status === 201));
+    client.test("name trimmed", () => client.assert(response.body.name === "디카페인"));
+%}
+
+### 4. A02 카테고리 상세 (방금 등록한 ID)
+# 기대: 200, {id:{{newCategoryId}}, name:"디카페인"}
+GET {{baseUrl}}/api/v1/categories/{{newCategoryId}}
+
+### 5. A04 카테고리 수정 (현재 이름 그대로)
+# 기대: 200, 자기 이름이라 중복 아님
+PUT {{baseUrl}}/api/v1/categories/{{newCategoryId}}
+Content-Type: {{contentType}}
+
+{
+  "name": "디카페인"
+}
+
+### 6. A04 카테고리 수정 (새 이름)
+# 기대: 200, {id:{{newCategoryId}}, name:"디카페인 원두"}
+PUT {{baseUrl}}/api/v1/categories/{{newCategoryId}}
+Content-Type: {{contentType}}
+
+{
+  "name": "디카페인 원두"
+}
+
+### 7. A05 카테고리 삭제 (메뉴 없는 카테고리)
+# 기대: 204, 빈 본문
+DELETE {{baseUrl}}/api/v1/categories/{{newCategoryId}}
+
+> {%
+    client.test("204 No Content", () => client.assert(response.status === 204));
+    client.test("empty body", () => client.assert(!response.body));
+%}
+
+### 8. A02 삭제 확인
+# 기대: 404, {code:"CATEGORY_NOT_FOUND", message:"카테고리를 찾을 수 없습니다.", fieldErrors:{}}
+GET {{baseUrl}}/api/v1/categories/{{newCategoryId}}
+
+
+### ============================================================
+### 오류 사례
+### ============================================================
+
+### 9. [400] 입력 오류 - 이름 공백만 (NotBlank)
+# 기대: 400, {code:"VALIDATION_ERROR", message:"입력값을 확인해 주세요.", fieldErrors:{name:"..."}}
+POST {{baseUrl}}/api/v1/categories
+Content-Type: {{contentType}}
+
+{
+  "name": "   "
+}
+
+### 10. [400] 입력 오류 - 경로 ID 0 (Min(1))
+# 기대: 400, fieldErrors에 categoryId 키 / 404가 나오면 Min(1) 또는 핸들러 누락
+GET {{baseUrl}}/api/v1/categories/0
+
+### 11. [409] 업무 위반 - 이름 중복 (초기 데이터 "블렌드")
+# 기대: 409, {code:"CATEGORY_NAME_DUPLICATED", message:"같은 이름의 카테고리가 이미 있습니다.", fieldErrors:{}}
+POST {{baseUrl}}/api/v1/categories
+Content-Type: {{contentType}}
+
+{
+  "name": "블렌드"
+}
+
+### 12. [409] 업무 위반 - 메뉴가 있는 카테고리 삭제 (싱글오리진)
+# 기대: 409, {code:"CATEGORY_IN_USE", message:"메뉴가 등록된 카테고리는 삭제할 수 없습니다.", fieldErrors:{}}
+# 500이 나오면 Service의 existsByCategoryId 검사 또는 CategoryInUseException 핸들러 누락
+DELETE {{baseUrl}}/api/v1/categories/1
+
+
+### ============================================================
+### 추가 확인 (선택)
+### ============================================================
+
+### 13. [400] 이름 31자 (Size max=30)
+POST {{baseUrl}}/api/v1/categories
+Content-Type: {{contentType}}
+
+{
+  "name": "가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다"
+}
+
+### 14. [400] 경로 ID 문자열 (타입 불일치)
+GET {{baseUrl}}/api/v1/categories/abc
+
+### 15. [400] JSON 문법 오류 → fieldErrors {}
+POST {{baseUrl}}/api/v1/categories
+Content-Type: {{contentType}}
+
+{ "name": "디카페인"
+
+### 16. [404] 존재하지 않는 ID 수정
+PUT {{baseUrl}}/api/v1/categories/99999
+Content-Type: {{contentType}}
+
+{
+  "name": "없는카테고리"
+}
+
+### 17. 대소문자 구분 확인 - "Decaf" 등록
+# 기대: 201
+POST {{baseUrl}}/api/v1/categories
+Content-Type: {{contentType}}
+
+{
+  "name": "Decaf"
+}
+
+> {% client.global.set("decafUpperId", response.body.id); %}
+
+### 18. 대소문자 구분 확인 - "decaf" 등록
+# 기대: 201 (409가 나오면 DB collation이 utf8mb4_bin이 아님)
+POST {{baseUrl}}/api/v1/categories
+Content-Type: {{contentType}}
+
+{
+  "name": "decaf"
+}
+
+> {% client.global.set("decafLowerId", response.body.id); %}
+
+### 19. 정리 - Decaf 삭제
+DELETE {{baseUrl}}/api/v1/categories/{{decafUpperId}}
+
+### 20. 정리 - decaf 삭제
+DELETE {{baseUrl}}/api/v1/categories/{{decafLowerId}}
+
+
+### ============================================================
+### A15 카테고리별 메뉴 조회
+### 준비 데이터: 싱글오리진 id=1 (메뉴 4개), 블렌드 id=2 (메뉴 0개)
+### ============================================================
+
+### 1. A15 정상 - 싱글오리진 (메뉴 4개)
+# 기대: 200, Menu[] 4개, ID 오름차순 (1→2→3→4)
+# 각 항목에 id·categoryId·name·price·description·available 모두 포함
+GET {{baseUrl}}/api/v1/categories/1/menus
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("4 menus", () => client.assert(response.body.length === 4));
+    client.test("id ascending", () => client.assert(response.body[0].id < response.body[1].id));
+    client.test("categoryId=1", () => client.assert(response.body.every(m => m.categoryId === 1)));
+%}
+
+### 2. A15 정상 - 블렌드 (카테고리는 있지만 메뉴 없음)
+# 기대: 200, []  ← 404가 나오면 안 됨
+GET {{baseUrl}}/api/v1/categories/2/menus
+
+> {%
+    client.test("200", () => client.assert(response.status === 200));
+    client.test("empty array", () => client.assert(Array.isArray(response.body) && response.body.length === 0));
+%}
+
+### 3. [404] 존재하지 않는 카테고리
+# 기대: 404, {code:"CATEGORY_NOT_FOUND", message:"카테고리를 찾을 수 없습니다.", fieldErrors:{}}
+GET {{baseUrl}}/api/v1/categories/99999/menus
+
+### 4. [400] 경로 ID 0
+# 기대: 400, fieldErrors에 categoryId
+GET {{baseUrl}}/api/v1/categories/0/menus
+
+### 5. [400] 경로 ID 문자열
+# 기대: 400
+GET {{baseUrl}}/api/v1/categories/abc/menus
