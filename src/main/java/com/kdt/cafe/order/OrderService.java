@@ -72,7 +72,9 @@ public class OrderService {
         }
 
         // 409 : 판매 중지 메뉴
-        menus.forEach(this::checkAvailable);
+        for (Menu menu : menus) {
+            checkAvailable(menu);
+        }
 
         // 409 : 같은 이메일, 배송일의 기존 주문과 배송지 비교
         LocalDateTime now = now();
@@ -161,20 +163,23 @@ public class OrderService {
 
     // A18 접수일별 메뉴 통계 : PLACED 주문만, 메뉴 ID → 단가 → 메뉴명
     public List<MenuStatisticsResponse> getMenuStatistics(LocalDate date) {
+        // 날짜 검사
         validateDate(date);
-        List<OrderItem> placedItems = findOrdersReceivedOn(date).stream()
-                .filter(o -> o.getStatus() == OrderStatus.PLACED)
-                .flatMap(o -> o.getItems().stream())
-                .toList();
-
-        return sumItems(placedItems).entrySet().stream()
-                .map(e -> new MenuStatisticsResponse(
-                        e.getKey().menuId(),
-                        e.getKey().menuName(),
-                        e.getKey().unitPrice(),
-                        e.getValue(),
-                        e.getKey().unitPrice() * e.getValue()))
-                .toList();
+        // PLACED 주문만 리스트에 담기
+        List<OrderItem> placedItems = new ArrayList<>();
+        for (Order o : findOrdersReceivedOn((date))) {
+            if (o.getStatus() == OrderStatus.PLACED) {
+                placedItems.addAll(o.getItems());
+            }
+        }
+        // 메뉴ID, 단가, 메뉴명이 같응ㄴ 항목끼리 수량을 더해서 리스트에 담기
+        List<MenuStatisticsResponse> result = new ArrayList<>();
+        for(Map.Entry<ItemKey, Long> e : sumItems(placedItems).entrySet()) {
+            ItemKey key = e.getKey();
+            Long quantity = e.getValue();
+            result.add(new MenuStatisticsResponse(key.menuId(), key.menuName(), key.unitPrice(), quantity, key.unitPrice() * quantity));
+        }
+        return result;
     }
 
     // A22 주문 메모 수정 : 취소된 주문도 수정 가능
@@ -185,48 +190,50 @@ public class OrderService {
         return OrderResponse.from(order);
     }
 
-    // A23 재주문 : 원본의 이메일, 주소, 우편번호, 메뉴, 수량 + 현재 메뉴 이름, 가격
+    // A23 재주문 : 원본 주문의 이메일, 주소, 우편번호, 메뉴, 수량 + 현재 메뉴 이름, 가격
     @Transactional
     public OrderResponse reorder(Long orderId) {
-        // 404 : 원본 주문
+        // 원본 주문 꺼내기 -> 없으면 404 에러
         Order original = getOrder(orderId);
 
-        // 409 : 판매 중지 메뉴
-        original.getItems().forEach(item -> checkAvailable(item.getMenu()));
+        // 판메 중지 메뉴 검사 -> 하나라도 판매 중지면 409 에러
+        for(OrderItem item : original.getItems()) {
+            checkAvailable(item.getMenu());
+        }
 
-        // 409 : 배송지 비교 (배송일은 재주문 시각 기준으로 다시 계산)
+        // 배송지 비교 (배송일은 재주문 시각 기준으로 다시 계산)
         LocalDateTime now = now();
         checkAddress(original.getEmail(), original.getAddress(), original.getPostcode(),
                 ShippingDateCalculator.shippingDateOf(now));
 
+        // 새 주문서 만들기
         Order newOrder = new Order(original.getEmail(), original.getAddress(), original.getPostcode(), now);
+        // 항목 담기
         for (OrderItem item : original.getItems()) {
             newOrder.addItem(item.getMenu(), item.getQuantity());   // 현재 메뉴 이름, 가격으로 복사
         }
+        // 저장
         orderRepository.save(newOrder);
         return OrderResponse.from(newOrder);
     }
 
     // A24 접수일별 고객 통계 : 이메일 오름차순, 모두 취소한 고객도 포함
     public List<CustomerStatisticsResponse> getCustomerStatistics(LocalDate date) {
+        // 날짜 검사
         validateDate(date);
-        return groupByEmail(findOrdersReceivedOn(date)).entrySet().stream()
-                .map(e -> {
-                    Summary summary = Summary.of(e.getValue());
-                    return new CustomerStatisticsResponse(
-                            date,
-                            e.getKey(),
-                            summary.orderCount(),
-                            summary.placedOrderCount(),
-                            summary.cancelledOrderCount(),
-                            summary.totalQuantity(),
-                            summary.totalAmount()
-                    );
-                })
-                .toList();
+
+        // 접수된 주문을 이메일별로 나누어 계산
+        List<CustomerStatisticsResponse> result = new ArrayList<>();
+        for (Map.Entry<String, List<Order>> e : groupByEmail(findOrdersReceivedOn(date)).entrySet()) {
+            String email = e.getKey();
+            Summary summary = Summary.of(e.getValue());
+            result.add(new CustomerStatisticsResponse(date, email, summary.orderCount(), summary.placedOrderCount(), summary.cancelledOrderCount(), summary.totalQuantity(), summary.totalAmount()));
+        }
+
+        return result;
     }
 
-    // 현재 시각 : 서울 기준, 초 단위
+    // 현재 시각 : 서울 기준, 초 단위 (초 아래 소수점 단위 자르기)
     private LocalDateTime now() {
         return LocalDateTime.now(SEOUL).truncatedTo(ChronoUnit.SECONDS);
     }
