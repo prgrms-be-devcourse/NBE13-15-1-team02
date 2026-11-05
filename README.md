@@ -182,6 +182,9 @@ java -m jdk.httpserver -b 127.0.0.1 -p 8000
 ### 3.1 requests/api-check.http (API 확인 요청)
 - 변수 설명, 실행 순서, 준비 데이터
 
+IntelliJ HTTP Client로 실행합니다. 파일을 열고 각 요청 옆 ▶ 버튼을 누르거나, 상단 **Run All**로 전체를 순서대로 실행합니다.
+
+**준비**: 2.2의 초기 데이터가 들어간 상태에서 2.3 백엔드를 실행합니다.
 
 ### 3.2 자동 테스트
 - `./gradlew test`, 테스트 6개가 각각 확인하는 것
