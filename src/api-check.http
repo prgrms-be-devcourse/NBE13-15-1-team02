@@ -1,13 +1,25 @@
+#에러발생시 테이블 drop 및 초기화
+### ============================================================
+#drop table order_item;
+#drop table `order`;
+#drop table menu;
+#drop table category;
+### ============================================================
+
+
 @baseUrl = http://127.0.0.1:8080
-@categoryId = 1
+@categoryId = 6
 @menuId = 1
+
+
+
 
 ### A01 카테고리 목록
 ###
 GET http://{{baseUrl}}/api/v1/categories
 ### A02 카테고리 상세
 ###
-GET http://localhost:8080/api/v1/categories/{{categoryId}}
+GET http://localhost:8080/api/v1/categories/2
 ### A03 카테고리 등록
 ###
 POST http://localhost:8080/api/v1/categories
