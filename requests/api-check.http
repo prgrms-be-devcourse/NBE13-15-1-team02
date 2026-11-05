@@ -9,26 +9,29 @@
 # 실제 DB에 등록된 정보로 수정
 @categoryIdDump=3
 @menuId=3
+@cancelMenuId=4
 @menuIdDump=5
 @emailDump= kdt1793b@test.com
 @emailDump2= TEST_EMAIL@test.com
 @emailDump3= TEST_FOR_Email_CANCEL@test.com
-
 @categoryId = 1
 @orderId = 1
 @cancelOrderId = 3
 @unavailableMenuId = 4
-@pastOrderId = 3
+@pastOrderId = 5
 @shippingDate = 2026-11-05
 @today = 2026-11-04
 
-### A01 카테고리 목록
+
+### A01 카테고리 목록 - 200
 GET {{baseUrl}}/api/v1/categories
 
-### A02 카테고리 상세
+
+### A02 카테고리 상세 - 200
 GET {{baseUrl}}/api/v1/categories/{{categoryId}}
 
-### A03 카테고리 등록
+
+### A03 카테고리 등록 - 201
 POST {{baseUrl}}/api/v1/categories
 Content-Type: application/json
 
@@ -36,7 +39,8 @@ Content-Type: application/json
   "name": "테스트 블랜드"
 }
 
-### A04 카테고리 수정
+
+### A04 카테고리 수정 - 200
 PUT {{baseUrl}}/api/v1/categories/{{categoryIdDump}}
 Content-Type: application/json
 
@@ -44,17 +48,21 @@ Content-Type: application/json
   "name": "Test Bean"
 }
 
-### A05 카테고리 삭제
+
+### A05 카테고리 삭제 - 204
 DELETE {{baseUrl}}/api/v1/categories/{{categoryIdDump}}
 
-### A06 전체메뉴
+
+### A06 전체메뉴 - 200
 GET {{baseUrl}}/api/v1/menus
 
-### A07 메뉴 상세
+
+### A07 메뉴 상세 - 200
 GET {{baseUrl}}/api/v1/menus/{{menuId}}?
     keyword={{$random.alphanumeric(8)}}
 
-### A08 메뉴 등록
+
+### A08 메뉴 등록 - 201
 POST {{baseUrl}}/api/v1/menus
 Content-Type: application/json
 
@@ -65,7 +73,8 @@ Content-Type: application/json
   "description": "  테스트 원두  "
 }
 
-### A09 메뉴 일반 수정
+
+### A09 메뉴 일반 수정 - 200
 PUT {{baseUrl}}/api/v1/menus/{{menuIdDump}}
 Content-Type: application/json
 
@@ -76,10 +85,12 @@ Content-Type: application/json
   "description": "Test description Bean"
 }
 
-### A10 메뉴 삭제
+
+### A10 메뉴 삭제 - 204
 DELETE {{baseUrl}}/api/v1/menus/{{menuIdDump}}
 
-### A11 주문 접수
+
+### A11 주문 접수 - 201
 POST {{baseUrl}}/api/v1/orders?
     email={{emailDump}}
 Content-Type: application/json
@@ -90,6 +101,7 @@ Content-Type: application/json
   "postcode": "03935",
   "items": [{"menuId": 4, "quantity": 1}]
 }
+
 
 ###추가 주문
 POST {{baseUrl}}/api/v1/orders?
@@ -102,6 +114,8 @@ Content-Type: application/json
   "postcode": "12345",
   "items": [{"menuId": 1, "quantity": 9}]
 }
+
+
 ###추가 주문
 POST {{baseUrl}}/api/v1/orders?
     email={{emailDump3}}
@@ -114,7 +128,8 @@ Content-Type: application/json
   "items": [{"menuId": 2, "quantity": 9}]
 }
 
-### A12 이메일별 주문
+
+### A12 이메일별 주문 - 200
 ###
 GET {{baseUrl}}/api/v1/orders?
     email={{emailDump}}
@@ -178,10 +193,11 @@ Content-Type: {{contentType}}
 GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
 
 
-### E1. [400] A17 날짜 범위 초과 (허용 범위 2000-01-01 ~ 2099-12-31) - 400
+### E1. A17 날짜 범위 초과 (허용 범위 2000-01-01 ~ 2099-12-31) - 400
 GET {{baseUrl}}/api/v1/statistics/orders?date=1999-12-31
 
-### E2. [400] A04 카테고리 범위 초과 (최대 허용 30) - 400
+
+### E2. A04 카테고리 범위 초과 (최대 허용 30) - 400
 POST {{baseUrl}}/api/v1/categories
 Content-Type: application/json
 
@@ -189,23 +205,12 @@ Content-Type: application/json
   "name": "AAAAAAAAAABBBBBBBBBBCCCCCCCCCCD"
 }
 
-### E3. [400] A11 입력형식 오류 () - 400
-POST {{baseUrl}}/api/v1/orders?
-    email=UnAbleEmail
-Content-Type: application/json
 
-{
-  "email": "UnAbleEmail",
-  "address": "서울시 마포구 월드컵로 1",
-  "postcode": "03935",
-  "items": [{"menuId": 4, "quantity": 1}]
-}
-
-
-### E4. [404] A07 존재하지않는 메뉴 조회 (허용 범위 2000-01-01 ~ 2099-12-31) - 400
+### E3. A07 존재하지않는 메뉴 조회 (허용 범위 2000-01-01 ~ 2099-12-31) - 404
 GET {{baseUrl}}/api/v1/menus/99999
 
-### E5. [409] A11 판매 중지 메뉴로 주문 (A21 실행 후)- 409
+
+### E4. A11 판매 중지 메뉴로 주문 (A21 실행 후) - 409
 POST {{baseUrl}}/api/v1/orders
 Content-Type: {{contentType}}
 
@@ -219,9 +224,12 @@ Content-Type: {{contentType}}
 }
 
 
-### E6. [409] A16 취소 마감(배송일 14:00:00)이 지난 주문 취소 - 409
+### E5. A16 취소 마감(배송일 14:00:00)이 지난 주문 취소 - 409
 POST {{baseUrl}}/api/v1/orders/{{pastOrderId}}/cancel
 
+
+### E6. A10 메뉴 삭제 - 409
+DELETE {{baseUrl}}/api/v1/menus/{{cancelMenuId}}
 
 
 ### 정리. A21 판매 재개 (다음 실행을 위해 원래대로)
