@@ -7,6 +7,12 @@
 @contentType = application/json
 
 # 실제 DB에 등록된 정보로 수정
+@categoryIdDump=3
+@menuId=3
+@menuIdDump=5
+@emailDump= kdt1793b@test.com
+@emailDump2= TEST_EMAIL@test.com
+
 @categoryId = 1
 @orderId = 1
 @cancelOrderId = 3
@@ -14,6 +20,92 @@
 @pastOrderId = 3
 @shippingDate = 2026-11-05
 @today = 2026-11-04
+
+### A01 카테고리 목록
+GET {{baseUrl}}/api/v1/categories
+
+### A02 카테고리 상세
+GET {{baseUrl}}/api/v1/categories/{{categoryId}}
+
+### A03 카테고리 등록
+POST {{baseUrl}}/api/v1/categories
+Content-Type: application/json
+
+{
+  "name": "테스트 블랜드"
+}
+
+### A04 카테고리 수정
+PUT {{baseUrl}}/api/v1/categories/{{categoryIdDump}}
+Content-Type: application/json
+
+{
+  "name": "Test Bean"
+}
+
+### A05 카테고리 삭제
+DELETE {{baseUrl}}/api/v1/categories/{{categoryIdDump}}
+
+### A06 전체메뉴
+GET {{baseUrl}}/api/v1/menus
+
+### A07 메뉴 상세
+GET {{baseUrl}}/api/v1/menus/{{menuId}}?
+    keyword={{$random.alphanumeric(8)}}
+
+### A08 메뉴 등록
+POST {{baseUrl}}/api/v1/menus
+Content-Type: application/json
+
+{
+  "categoryId": 1,
+  "name": "  Test Bean  ",
+  "price": 6000,
+  "description": "  테스트 원두  "
+}
+
+### A09 메뉴 일반 수정
+PUT {{baseUrl}}/api/v1/menus/{{menuIdDump}}
+Content-Type: application/json
+
+{
+  "categoryId": 2,
+  "name": "Test name Bean",
+  "price": 99999,
+  "description": "Test description Bean"
+}
+
+### A10 메뉴 삭제
+DELETE {{baseUrl}}/api/v1/menus/{{menuIdDump}}
+
+### A11 주문 접수
+POST {{baseUrl}}/api/v1/orders?
+    email={{emailDump}}
+Content-Type: application/json
+
+{
+  "email": "{{emailDump}}",
+  "address": "서울시 마포구 월드컵로 1",
+  "postcode": "03935",
+  "items": [{"menuId": 4, "quantity": 1}]
+}
+
+###추가 주문
+POST {{baseUrl}}/api/v1/orders?
+    email={{emailDump2}}
+Content-Type: application/json
+
+{
+  "email": "{{emailDump2}}",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "12345",
+  "items": [{"menuId": 1, "quantity": 9}]
+}
+
+### A12 이메일별 주문
+###
+GET {{baseUrl}}/api/v1/orders?
+    email={{emailDump}}
 
 
 ### A13 주문 상세 - 200
@@ -77,8 +169,31 @@ GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
 ### E1. [400] A17 날짜 범위 초과 (허용 범위 2000-01-01 ~ 2099-12-31) - 400
 GET {{baseUrl}}/api/v1/statistics/orders?date=1999-12-31
 
+### E2. [400] A04 카테고리 범위 초과 (최대 허용 30) - 400
+POST {{baseUrl}}/api/v1/categories
+Content-Type: application/json
 
-### E2. [409] A11 판매 중지 메뉴로 주문 (A21 실행 후)- 409
+{
+  "name": "AAAAAAAAAABBBBBBBBBBCCCCCCCCCCD"
+}
+
+### E3. [400] A11 입력형식 오류 () - 400
+POST {{baseUrl}}/api/v1/orders?
+    email=UnAbleEmail
+Content-Type: application/json
+
+{
+  "email": "UnAbleEmail",
+  "address": "서울시 마포구 월드컵로 1",
+  "postcode": "03935",
+  "items": [{"menuId": 4, "quantity": 1}]
+}
+
+
+### E4. [404] A07 존재하지않는 메뉴 조회 (허용 범위 2000-01-01 ~ 2099-12-31) - 400
+GET {{baseUrl}}/api/v1/menus/99999
+
+### E5. [409] A11 판매 중지 메뉴로 주문 (A21 실행 후)- 409
 POST {{baseUrl}}/api/v1/orders
 Content-Type: {{contentType}}
 
@@ -92,8 +207,9 @@ Content-Type: {{contentType}}
 }
 
 
-### E3. A16 취소 마감(배송일 14:00:00)이 지난 주문 취소 - 409
+### E6. [409] A16 취소 마감(배송일 14:00:00)이 지난 주문 취소 - 409
 POST {{baseUrl}}/api/v1/orders/{{pastOrderId}}/cancel
+
 
 
 ### 정리. A21 판매 재개 (다음 실행을 위해 원래대로)
