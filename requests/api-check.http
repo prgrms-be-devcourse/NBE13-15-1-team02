@@ -12,6 +12,7 @@
 @menuIdDump=5
 @emailDump= kdt1793b@test.com
 @emailDump2= TEST_EMAIL@test.com
+@emailDump3= TEST_FOR_Email_CANCEL@test.com
 
 @categoryId = 1
 @orderId = 1
@@ -100,6 +101,17 @@ Content-Type: application/json
   "address": "서울시 강남구 테헤란로 1",
   "postcode": "12345",
   "items": [{"menuId": 1, "quantity": 9}]
+}
+###추가 주문
+POST {{baseUrl}}/api/v1/orders?
+    email={{emailDump3}}
+Content-Type: application/json
+
+{
+  "email": "{{emailDump3}}",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "11223",
+  "items": [{"menuId": 2, "quantity": 9}]
 }
 
 ### A12 이메일별 주문
