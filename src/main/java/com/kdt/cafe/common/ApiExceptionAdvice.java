@@ -7,7 +7,6 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.HashMap;
@@ -29,13 +28,31 @@ public class ApiExceptionAdvice {
     }
     //JSON 문법오류 httpMessageNotReadableException.class
     //400 badRequest
-    @ExceptionHandler({HttpMessageNotReadableException.class,
-            MissingServletRequestParameterException.class,
-            MethodArgumentTypeMismatchException.class,
-            HandlerMethodValidationException.class})
-    public ResponseEntity<ApiError> theOtherBadRequestExceptionHandler(Exception ex){
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> theOtherBadRequestExceptionHandler(HttpMessageNotReadableException ex){
         Map<String,String> fieldError = new HashMap<>();
-        ApiError error = new ApiError("VALIDATION_ERROR","입력값을 확인해주세요.",fieldError);
+        ApiError error = new ApiError("VALIDATION_ERROR","입력값을 확인해 주세요.",fieldError);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+    //누락
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiError> MissingServletRequestParameterExceptionHandler(MissingServletRequestParameterException ex){
+        Map<String,String> fieldError = new HashMap<>();
+        fieldError.put(ex.getParameterName(),"필수 값입니다.");
+        ApiError error = new ApiError("VALIDATION_ERROR",
+                "입력값을 확인해 주세요.",fieldError);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    //타입 불일치 (예: /menus/abc, ?shippingDate=abc)
+    //400 badRequest
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> methodArgumentTypeMismatchExceptionHandler(MethodArgumentTypeMismatchException ex){
+        Map<String,String> fieldError = new HashMap<>();
+        // getName() : 컨트롤러에 적은 이름 (menuId, orderId, shippingDate ...)
+        fieldError.put(ex.getName(), "형식이 올바르지 않습니다.");
+        ApiError error = new ApiError("VALIDATION_ERROR",
+                "입력값을 확인해 주세요.",fieldError);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 
