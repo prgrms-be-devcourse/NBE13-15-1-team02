@@ -57,15 +57,126 @@ src/main/java/com/kdt/cafe
 ```
 
 ## 2. 실행 방법
-### 2.1 환경 변수 (필수 3)
-- 변수 이름과 예시 값 표 (DB_URL, DB_USERNAME, DB_PASSWORD 등)
-- application.yaml에서 읽는 위치
-### 2.2 DB 준비 (필수 4)
-- MySQL DB 생성 → schema.sql → data.sql 순서, 재실행 시 중복 안 되는 이유
-### 2.3 백엔드 실행 (필수 4)
-- `./gradlew bootRun`, 포트 8080
-### 2.4 화면 실행 (필수 4)
-- `web` 폴더에서 `java -m jdk.httpserver ...`, 접속 주소, 연결 설정 방법
+
+- 사전 준비 : JDK21, Docker, Git
+
+### 2.1 환경 변수
+DB 접속 정보는 프로젝트 루트의 `.env`에서 읽습니다.<br>
+`src/main/resources/application.yaml`이 `spring.config.import`로 `.env`를 불러오고, <br>
+`spring.datasource`의 `url` · `username` · `password`가 각각 `${DB_URL}` · `${DB_USERNAME}` · `${DB_PASSWORD}`를 사용합니다.
+
+`.env`는 저장소에 포함되지 않으므로 예시 파일(`.env.example`)을 복사해 비밀번호를 채웁니다.<br>
+`DB_URL`의 포트를 내 Docker MySQL 포트에 맞춰 바꿔주세요. (예: `-p 3307:3306` -> `3307`)
+
+```bash
+cp .env.example .env        # Windows: copy .env.example .env
+```
+
+| 변수 | 설명 | 예시 값 |
+|:---|:---|:---|
+| `DB_URL` | JDBC 접속 주소  | `jdbc:mysql://127.0.0.1:3306/kdt-spring?allowPublicKeyRetrieval=true&sslMode=DISABLED` |
+| `DB_USERNAME` | DB 사용자  | `root` |
+| `DB_PASSWORD` | DB 비밀번호 | `your_password` |
+
+### 2.2 DB 준비
+
+**1) MySQL 컨테이너 실행**
+
+컨테이너를 만들 때 비밀번호와 포트는 `.env`와 같게 입력합니다.<br>
+(비밀번호 = `DB_PASSWORD`, 포트 = `DB_URL`의 포트 번호)
+
+Docker Desktop의 Containers 목록에 `kdt-mysql`이 이미 있다면 새로 만들지 않고 실행만 합니다.<br>
+(명령어: `docker start kdt-mysql` / Docker Desktop: ▶ 버튼)
+
+**방법 A. 명령어(Windows 동일)**
+
+```bash 
+docker run -d --name kdt-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=your_password -e MYSQL_DATABASE=kdt-spring mysql:8.4
+```
+
+**방법 B. Docker Desktop**
+
+1. 상단 검색창에 `mysql` 입력 -> `mysql` 이미지 선택 -> Tag `8.4` -> **Pull**
+2. **Images** 탭에서 `mysql:8.4` 옆 ▶(Run) 클릭 -> **Optional settings** 펼치기
+3. 아래 값을 입력 후 **Run**
+
+| 항목 | 값 |
+|:---|:---|
+| Container name | `kdt-mysql` |
+| Host port | `3306` (내 `DB_URL` 포트) |
+| Environment variables | `MYSQL_ROOT_PASSWORD` = `your_password` |
+|  | `MYSQL_DATABASE` = `kdt-spring` |
+
+**실행 확인**: Containers 탭(또는 `docker ps`)에서 `kdt-mysql`이 실행 중이면 성공입니다.
+
+**2) 테이블 생성 · 초기 데이터 등록(IntelliJ Database 도구)**
+
+1. 오른쪽 **Database** 탭 -> `+` -> Data Source -> MySQL
+2. Host `127.0.0.1`, Port `3306`(내 Docker 포트), User `root`, Password는 `.env`의 `DB_PASSWORD`, Database `kdt-spring` 입력 후 **Test Connection** -> OK
+3. 프로젝트 트리에서 `src/main/resources/schema.sql` 우클릭 -> **Run `schema.sql`** -> 방금 만든 데이터 소스 선택
+4. 같은 방법으로 `src/main/resources/data.sql` 실행
+
+`schema.sql`과 `data.sql`은 여러 번 실행해도 안전합니다.<br>
+(테이블이 이미 있으면 건너뛰고, 초기 데이터는 이미 있으면 다시 등록하지 않습니다.)
+
+**3) 확인**
+
+Database 탭에서 `kdt-spring` 우클릭 -> **New -> Query Console**을 열고 아래를 실행합니다.<br>
+카테고리 2개(싱글오리진, 블렌드)와 메뉴 4개가 조회되면 성공입니다.
+
+```sql
+USE `kdt-spring`;
+SELECT * FROM category;
+SELECT id, category_id, name, price, available FROM menu;
+```
+
+### 2.3 백엔드 실행 
+
+2.2의 `kdt-mysql` 컨테이너가 실행 중이고, 프로젝트 루트에 `.env`가 있어야 합니다.
+
+**방법 A. IntelliJ**
+
+`src/main/java/com/kdt/cafe/CafeApplication.java`를 열고 `main` 메서드 옆 ▶ 버튼 -> **Run `CafeApplication`**
+
+**방법 B. 터미널**
+
+프로젝트 루트에서 실행합니다.
+
+```bash
+./gradlew bootRun             # Windows: .\gradlew bootRun
+```
+
+**실행 확인**
+
+로그에 `Started CafeApplication`이 나오면 서버가 `8080` 포트로 실행된 것입니다.<br>
+브라우저에서 `http://127.0.0.1:8080/api/v1/categories` 에 접속해 아래와 같은 JSON이 보이면 DB 연결까지 성공입니다.
+
+```json
+[{"id": 1, "name": "싱글오리진"},{"id": 2, "name": "블렌드"}]
+```
+
+### 2.4 화면 실행 
+
+2.3의 백엔드가 실행 중이어야 합니다.
+
+**1) 화면 서버 실행**
+
+백엔드와 다른 **새 터미널**을 열고, 프로젝트 루트에서 `web` 폴더로 이동해 실행합니다.
+
+```bash
+cd web
+java -m jdk.httpserver -b 127.0.0.1 -p 8000
+```
+
+**2) 브라우저 접속**
+
+`http://127.0.0.1:8000`에 접속합니다.<br>
+`localhost:8000`으로 접속하면 브라우저가 다른 주소로 취급해 API 요청이 차단되므로, 반드시 `127.0.0.1`을 사용합니다.
+
+**실행 확인**
+
+첫 화면인 원두 주문 화면에 초기 메뉴 4개가 보이면 성공입니다.<br>
+연결되지 않으면 화면의 **연결 설정 -> 실제 API 연결**에서 서버 주소가 `http://127.0.0.1:8080`인지 확인합니다.
 
 ## 3. 검증 (필수 5)
 ### 3.1 requests/api-check.http
