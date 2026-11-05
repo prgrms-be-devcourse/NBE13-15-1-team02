@@ -1,0 +1,105 @@
+### api-check.http — A13~A24 정상 12개 + 오류 3개 (입력 오류 1개 - 400 / 업무 조건 위반 2개 - 409)
+### [실행 순서] 위에서 아래로 A13 → A14 → ... → A24 → 오류 E1 → E2 → E3
+###   - A21(메뉴 판매 중지)은 A23(재주문)보다 뒤에 실행. (재주문할 원본 주문에 판매 중지 메뉴가 없어야 함)
+###   - E2는 A21로 판매 중지한 메뉴를 사용하므로 A21 뒤에 실행. 마지막 '정리' 요청으로 판매 가능으로 변경.
+
+@baseUrl = http://127.0.0.1:8080
+@contentType = application/json
+
+# 실제 DB에 등록된 정보로 수정
+@categoryId = 1
+@orderId = 1
+@cancelOrderId = 3
+@unavailableMenuId = 4
+@pastOrderId = 3
+@shippingDate = 2026-11-05
+@today = 2026-11-04
+
+
+### A13 주문 상세 - 200
+GET {{baseUrl}}/api/v1/orders/{{orderId}}
+
+
+### A14 배송 묶음 - 200
+GET {{baseUrl}}/api/v1/delivery-batches?shippingDate={{shippingDate}}
+
+
+### A15 카테고리별 메뉴 - 200
+GET {{baseUrl}}/api/v1/categories/{{categoryId}}/menus
+
+
+### A16 주문 취소 - 200
+POST {{baseUrl}}/api/v1/orders/{{cancelOrderId}}/cancel
+
+
+### A17 접수일별 주문 통계 - 200
+GET {{baseUrl}}/api/v1/statistics/orders?date={{today}}
+
+
+### A18 접수일별 메뉴 통계 - 200
+GET {{baseUrl}}/api/v1/statistics/menus?date={{today}}
+
+
+### A19 판매 중 메뉴 - 200
+GET {{baseUrl}}/api/v1/menus/available
+
+
+### A20 메뉴명 검색 - 200
+GET {{baseUrl}}/api/v1/menus/search?keyword=Columbia
+
+
+### A22 주문 메모 수정 - 200
+PUT {{baseUrl}}/api/v1/orders/{{orderId}}/memo
+Content-Type: {{contentType}}
+
+{
+  "memo": "주문 확인 완료"
+}
+
+
+### A23 재주문 - 201
+POST {{baseUrl}}/api/v1/orders/{{orderId}}/reorder
+
+
+### A21 판매 여부 변경 (판매 중지) - 200
+PUT {{baseUrl}}/api/v1/menus/{{unavailableMenuId}}/availability
+Content-Type: {{contentType}}
+
+{
+  "available": false
+}
+
+
+### A24 접수일별 고객 통계 - 200
+GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
+
+
+### E1. [400] A17 날짜 범위 초과 (허용 범위 2000-01-01 ~ 2099-12-31) - 400
+GET {{baseUrl}}/api/v1/statistics/orders?date=1999-12-31
+
+
+### E2. [409] A11 판매 중지 메뉴로 주문 (A21 실행 후)- 409
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "unavailable@example.com",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "06236",
+  "items": [
+    { "menuId": {{unavailableMenuId}}, "quantity": 1 }
+  ]
+}
+
+
+### E3. A16 취소 마감(배송일 14:00:00)이 지난 주문 취소 - 409
+POST {{baseUrl}}/api/v1/orders/{{pastOrderId}}/cancel
+
+
+### 정리. A21 판매 재개 (다음 실행을 위해 원래대로)
+PUT {{baseUrl}}/api/v1/menus/{{unavailableMenuId}}/availability
+Content-Type: {{contentType}}
+
+{
+  "available": true
+}
