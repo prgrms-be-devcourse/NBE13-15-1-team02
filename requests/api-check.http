@@ -1,0 +1,256 @@
+### api-check.http — A13~A24 정상 12개 + 오류 3개 (입력 오류 1개 - 400 / 업무 조건 위반 2개 - 409)
+### [실행 순서] 위에서 아래로 A13 → A14 → ... → A24 → 오류 E1 → E2 → E3
+###   - A21(메뉴 판매 중지)은 A23(재주문)보다 뒤에 실행. (재주문할 원본 주문에 판매 중지 메뉴가 없어야 함)
+###   - E2는 A21로 판매 중지한 메뉴를 사용하므로 A21 뒤에 실행. 마지막 '정리' 요청으로 판매 가능으로 변경.
+
+@baseUrl = http://127.0.0.1:8080
+@contentType = application/json
+
+# 실제 DB에 등록된 정보로 수정
+# A03, A04, A05 시연하며 카테고리 등록, 카테고리 수정, 카테고리 삭제과정에서
+#새로운 더미데이터 생성을 위한 카테고리아이디 변수
+@categoryIdDump=3
+#Menu 테이블에 데이터가 4개 들어있습니다.
+#변수 숫자에 의미는 없습니다. 1에서 4까지만 들어있어서 3을 넣었습니다.
+#테이블 접근을 보여주기 위한 변수
+@menuId=3
+#A08에서 테스트값을 Menu테이블에 기입합니다
+#이 테스트 값으로 A09 A10 각각 수정과 삭제를 하기위해 새로 만들어지는 5번째 데이터를 사용합니다
+#새로운 더미데이터 접근을 위한 메뉴아이디 변수
+@menuIdDump=5
+#A11 주문접수api 확인시 기입해야하는 이메일 정보입니다
+#A11과 A12에서만 사용되는 더미데이터입니다.
+@emailDump= kdt1793b@test.com
+#주문목록을 만들기 위해 행을 생성하는데 사용되는 데이터입니다
+#A17 A18 A19에서 통계데이터에 통계 합산값으로만 사용되고 직접 조회, 수정, 삭제는 하지 않습니다
+#행을 3개 만들기 위해 더미데이터로 선언하였습니다
+@emailDump2= TEST_EMAIL@test.com
+#A16번 주문취소에 사용되는 행을 위해 만든 데이터입니다.
+#A16번에서 직접 사용되고 이후 통계데이터에서 합산값으로 나옵니다
+@emailDump3= TEST_FOR_Email_CANCEL@test.com
+
+@categoryId = 1
+@orderId = 1
+@cancelOrderId = 3
+@unavailableMenuId = 4
+@pastOrderId = 5
+@shippingDate = 2026-11-05
+@today = 2026-11-04
+
+
+### A01 카테고리 목록 - 200 / 배열, 각 항목 id·name
+GET {{baseUrl}}/api/v1/categories
+
+
+### A02 카테고리 상세 - 200 / id=1, name
+GET {{baseUrl}}/api/v1/categories/{{categoryId}}
+
+
+### A03 카테고리 등록 - 201 / 새 id, name="테스트 블랜드", Location 헤더
+POST {{baseUrl}}/api/v1/categories
+Content-Type: application/json
+
+{
+  "name": "테스트 블랜드"
+}
+
+
+### A04 카테고리 수정 - 200 / id=3, name="Test Bean"
+PUT {{baseUrl}}/api/v1/categories/{{categoryIdDump}}
+Content-Type: application/json
+
+{
+  "name": "Test Bean"
+}
+
+
+### A05 카테고리 삭제 - 204 / 빈 본문
+DELETE {{baseUrl}}/api/v1/categories/{{categoryIdDump}}
+
+
+### A06 전체메뉴 - 200 / 배열, 각 항목 id·categoryId·name·price·description·available
+GET {{baseUrl}}/api/v1/menus
+
+
+### A07 메뉴 상세 - 200 / id=3, categoryId·name·price·description·available
+GET {{baseUrl}}/api/v1/menus/{{menuId}}?
+    keyword={{$random.alphanumeric(8)}}
+
+
+### A08 메뉴 등록 - 201 / 새 id, name="Test Bean", description="테스트 원두", price=6000, available=true
+POST {{baseUrl}}/api/v1/menus
+Content-Type: application/json
+
+{
+  "categoryId": 1,
+  "name": "  Test Bean  ",
+  "price": 6000,
+  "description": "  테스트 원두  "
+}
+
+
+### A09 메뉴 일반 수정 - 200 / categoryId=2, name="Test name Bean", price=99999, description="Test description Bean"
+PUT {{baseUrl}}/api/v1/menus/{{menuIdDump}}
+Content-Type: application/json
+
+{
+  "categoryId": 2,
+  "name": "Test name Bean",
+  "price": 99999,
+  "description": "Test description Bean"
+}
+
+
+### A10 메뉴 삭제 - 204 / 빈 본문
+DELETE {{baseUrl}}/api/v1/menus/{{menuIdDump}}
+
+
+### A11 주문 접수 - 201 / status=PLACED, totalAmount=11000, cancelledAt=null, memo=""
+POST {{baseUrl}}/api/v1/orders?
+    email={{emailDump}}
+Content-Type: application/json
+
+{
+  "email": "{{emailDump}}",
+  "address": "서울시 마포구 월드컵로 1",
+  "postcode": "03935",
+  "items": [{"menuId": 4, "quantity": 1}]
+}
+
+
+###추가 주문
+POST {{baseUrl}}/api/v1/orders?
+    email={{emailDump2}}
+Content-Type: application/json
+
+{
+  "email": "{{emailDump2}}",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "12345",
+  "items": [{"menuId": 1, "quantity": 9}]
+}
+
+
+###추가 주문
+POST {{baseUrl}}/api/v1/orders?
+    email={{emailDump3}}
+Content-Type: application/json
+
+{
+  "email": "{{emailDump3}}",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "11223",
+  "items": [{"menuId": 2, "quantity": 9}]
+}
+
+
+### A12 이메일별 주문 - 200 / 배열, 각 항목 id·createdAt·shippingDate·totalAmount·status
+###
+GET {{baseUrl}}/api/v1/orders?
+    email={{emailDump}}
+
+
+### A13 주문 상세 - 200 / id=1, items 배열, status
+GET {{baseUrl}}/api/v1/orders/{{orderId}}
+
+
+### A14 배송 묶음 - 200 / 배열, 각 항목 shippingDate·email·address·postcode·orderIds·orderCount·totalQuantity·totalAmount·items
+GET {{baseUrl}}/api/v1/delivery-batches?shippingDate={{shippingDate}}
+
+
+### A15 카테고리별 메뉴 - 200 / Menu 배열, 모두 categoryId=1
+GET {{baseUrl}}/api/v1/categories/{{categoryId}}/menus
+
+
+### A16 주문 취소 - 200 / status=CANCELLED, cancelledAt 채워짐
+POST {{baseUrl}}/api/v1/orders/{{cancelOrderId}}/cancel
+
+
+### A17 접수일별 주문 통계 - 200 / date, orderCount = placedOrderCount + cancelledOrderCount, totalQuantity·totalAmount
+GET {{baseUrl}}/api/v1/statistics/orders?date={{today}}
+
+
+### A18 접수일별 메뉴 통계 - 200 / 배열, 각 항목 menuId·menuName·unitPrice·totalQuantity·totalAmount
+GET {{baseUrl}}/api/v1/statistics/menus?date={{today}}
+
+
+### A19 판매 중 메뉴 - 200 / Menu 배열, 모두 available=true
+GET {{baseUrl}}/api/v1/menus/available
+
+
+### A20 메뉴명 검색 - 200 / name에 "Columbia" 포함된 Menu 배열
+GET {{baseUrl}}/api/v1/menus/search?keyword=Columbia
+
+
+### A22 주문 메모 수정 - 200 / memo="주문 확인 완료", 나머지 필드 그대로
+PUT {{baseUrl}}/api/v1/orders/{{orderId}}/memo
+Content-Type: {{contentType}}
+
+{
+  "memo": "주문 확인 완료"
+}
+
+
+### A23 재주문 - 201 / 새 id, status=PLACED, cancelledAt=null, memo=""
+POST {{baseUrl}}/api/v1/orders/{{orderId}}/reorder
+
+
+### A21 판매 여부 변경 (판매 중지) - 200 / available=false, 나머지 필드 그대로
+PUT {{baseUrl}}/api/v1/menus/{{unavailableMenuId}}/availability
+Content-Type: {{contentType}}
+
+{
+  "available": false
+}
+
+
+### A24 접수일별 고객 통계 - 200 / 배열, 각 항목 date·email·orderCount·placedOrderCount·cancelledOrderCount·totalQuantity·totalAmount
+GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
+
+
+### E1. [400] A17 날짜 범위 초과 (허용 범위 2000-01-01 ~ 2099-12-31) - 400 / code,message,fieldErrors{}
+GET {{baseUrl}}/api/v1/statistics/orders?date=1999-12-31
+
+
+### E2. [400] A04 카테고리 범위 초과 (최대 허용 30) - 400 / code,message,fieldErrors{name}
+POST {{baseUrl}}/api/v1/categories
+Content-Type: application/json
+
+{
+  "name": "AAAAAAAAAABBBBBBBBBBCCCCCCCCCCD"
+}
+
+
+### E3. [404] A07 존재하지 않는 메뉴 조회 - 404 / code=MENU_NOT_FOUND, message, fieldErrors{}
+GET {{baseUrl}}/api/v1/menus/99999
+
+
+### E4. [409] A11 판매 중지 메뉴로 주문 (A21 실행 후) - 409 / code=MENU_UNAVAILABLE, message, fieldErrors{}
+POST {{baseUrl}}/api/v1/orders
+Content-Type: {{contentType}}
+
+{
+  "email": "unavailable@example.com",
+  "address": "서울시 강남구 테헤란로 1",
+  "postcode": "06236",
+  "items": [
+    { "menuId": {{unavailableMenuId}}, "quantity": 1 }
+  ]
+}
+
+
+### E5. [409] A16 취소 마감(배송일 14:00:00)이 지난 주문 취소 - 409 / code=ORDER_NOT_CANCELLABLE, message, fieldErrors{}
+POST {{baseUrl}}/api/v1/orders/{{pastOrderId}}/cancel
+
+
+### E6. [409] A10 주문에 사용된 메뉴 삭제 - 409 / code=MENU_IN_USE, message, fieldErrors{}
+DELETE {{baseUrl}}/api/v1/menus/{{cancelMenuId}}
+
+
+### 정리. A21 판매 재개 (다음 실행을 위해 원래대로)
+PUT {{baseUrl}}/api/v1/menus/{{unavailableMenuId}}/availability
+Content-Type: {{contentType}}
+
+{
+  "available": true
+}

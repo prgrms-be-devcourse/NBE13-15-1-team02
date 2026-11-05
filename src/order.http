@@ -455,8 +455,8 @@ Content-Type: {{contentType}}
 
 ### 43. E2 주문 취소
 # 기대: 200, CANCELLED
+###POST {{baseUrl}}/api/v1/orders/{{e2OrderId}}/cancel
 POST {{baseUrl}}/api/v1/orders/{{e2OrderId}}/cancel
-
 
 ### 44. E2 새 주소(주소 B)로 주문
 # 기대: 201 (기존 주문이 모두 취소됐으므로 ADDRESS_MISMATCH가 아님)
@@ -466,8 +466,8 @@ Content-Type: {{contentType}}
 {
   "email": "{{email2}}",
   "address": "경기도 성남시 분당구 판교로 1",
-  "postcode": "13494",
-  "items": [{"menuId": 4, "quantity": 2}]
+  "postcode": "06236",
+  "items": [{"menuId": 3, "quantity": 3}]
 }
 
 
