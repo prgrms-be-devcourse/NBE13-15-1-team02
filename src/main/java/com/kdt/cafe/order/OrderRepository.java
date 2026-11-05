@@ -1,6 +1,8 @@
 package com.kdt.cafe.order;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -19,4 +21,12 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
 
     // A17, A18, A24 통계 : 접수 시각이 [start, end) 범위인 주문
     List<Order> findByCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(LocalDateTime start, LocalDateTime end);
+
+    //a14 n+1
+    @Query("select distinct o from Order o join fetch o.items " +
+            "where o.shippingDate = :date and o.status = :status order by o.id asc")
+    List<Order> findDeliveryTargets(@Param("date") LocalDate date,
+                                    @Param("status") OrderStatus status);
+
+
 }
