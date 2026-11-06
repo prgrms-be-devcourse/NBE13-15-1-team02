@@ -96,7 +96,8 @@ public class OrderService {
         validateDate(shippingDate);
 
         List<Order> orders = orderRepository
-                .findByShippingDateAndStatusOrderByIdAsc(shippingDate, OrderStatus.PLACED);
+                //.findByShippingDateAndStatusOrderByIdAsc(shippingDate, OrderStatus.PLACED);
+                .findDeliveryTargets(shippingDate,OrderStatus.PLACED);
 
         List<DeliveryBatchResponse> batches = new ArrayList<>();
         for (List<Order> group : groupByEmail(orders).values()) {
@@ -183,11 +184,11 @@ public class OrderService {
     @Transactional
     public OrderResponse reorder(Long orderId) {
         // 원본 주문 꺼내기 -> 없으면 404 에러
-        Order original = getOrder(orderId);
+        Order original = getOrder(orderId);     //여기서 findByid, select 쿼리 실행
 
         // 판매 중지 메뉴 검사 -> 하나라도 판매 중지면 409 에러
         for(OrderItem item : original.getItems()) {
-            checkAvailable(item.getMenu());
+            checkAvailable(item.getMenu());     //id외의 필드를 읽으면 아이템마다 select from menu where id=?가 나간다
         }
 
         // 배송지 비교 (배송일은 재주문 시각 기준으로 다시 계산)
