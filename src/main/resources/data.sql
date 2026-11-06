@@ -30,6 +30,18 @@ WHERE c.name = '싱글오리진'
   AND NOT EXISTS (SELECT 1 FROM menu m WHERE m.category_id = c.id AND m.name = 'Ethiopia Sidamo');
 
 
+-- http요청 테스트용 데이터
+-- E5번 실행 전 데이터 추가 (취소 마감 지난 PLACE 주문 데이터 등록)
+INSERT INTO `order` (email, address, postcode, total_amount, status, created_at, shipping_date, memo)
+VALUES ('past@example.com', '서울시 강남구 테헤란로 1', '06236', 5000, 'PLACED',
+        CURDATE() - INTERVAL 2 DAY + INTERVAL 10 HOUR, CURDATE() - INTERVAL 2 DAY, '');
+
+INSERT INTO order_item (order_id, menu_id, menu_name, unit_price, quantity, line_amount)
+VALUES (LAST_INSERT_ID(), 1, 'Columbia Nariñó', 5000, 1, 5000);
+
+SELECT id, email, status, created_at, shipping_date FROM `order` ORDER BY id DESC LIMIT 1;
+
+
 
 
 
