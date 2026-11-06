@@ -156,7 +156,7 @@ GET {{baseUrl}}/api/v1/orders?
 ### A13 주문 상세 - 200 / id=1, items 배열, status
 GET {{baseUrl}}/api/v1/orders/{{orderId}}
 
-
+### n+1 문제 발생
 ### A14 배송 묶음 - 200 / 배열, 각 항목 shippingDate·email·address·postcode·orderIds·orderCount·totalQuantity·totalAmount·items
 GET {{baseUrl}}/api/v1/delivery-batches?shippingDate={{shippingDate}}
 
@@ -193,7 +193,7 @@ Content-Type: {{contentType}}
   "memo": "주문 확인 완료"
 }
 
-
+# n+1
 ### A23 재주문 - 201 / 새 id, status=PLACED, cancelledAt=null, memo=""
 POST {{baseUrl}}/api/v1/orders/{{orderId}}/reorder
 
@@ -206,7 +206,7 @@ Content-Type: {{contentType}}
   "available": false
 }
 
-
+# n+1
 ### A24 접수일별 고객 통계 - 200 / 배열, 각 항목 date·email·orderCount·placedOrderCount·cancelledOrderCount·totalQuantity·totalAmount
 GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
 
