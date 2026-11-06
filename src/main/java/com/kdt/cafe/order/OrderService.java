@@ -96,7 +96,6 @@ public class OrderService {
         validateDate(shippingDate);
 
         List<Order> orders = orderRepository
-                //.findByShippingDateAndStatusOrderByIdAsc(shippingDate, OrderStatus.PLACED);
                 .findDeliveryTargets(shippingDate,OrderStatus.PLACED);
 
         List<DeliveryBatchResponse> batches = new ArrayList<>();
@@ -140,7 +139,7 @@ public class OrderService {
     // A17 접수일별 주문 통계 : 주문이 없어도 0으로 채운 객체 반환
     public OrderStatisticsResponse getOrderStatistics(LocalDate date) {
         validateDate(date);
-        Summary summary = Summary.of(findOrdersReceivedOn(date));
+        Summary summary = Summary.of(findStatisticsTargetsOn(date));
         return new OrderStatisticsResponse(
                 date,
                 summary.orderCount(),
@@ -157,7 +156,7 @@ public class OrderService {
         validateDate(date);
         // PLACED 주문만 리스트에 담기
         List<OrderItem> placedItems = new ArrayList<>();
-        for (Order o : findOrdersReceivedOn((date))) {
+        for (Order o : findStatisticsTargetsOn((date))) {
             if (o.getStatus() == OrderStatus.PLACED) {
                 placedItems.addAll(o.getItems());
             }
@@ -214,7 +213,7 @@ public class OrderService {
 
         // 접수된 주문을 이메일별로 나누어 계산
         List<CustomerStatisticsResponse> result = new ArrayList<>();
-        for (Map.Entry<String, List<Order>> e : groupByEmail(findOrdersReceivedOn(date)).entrySet()) {
+        for (Map.Entry<String, List<Order>> e : groupByEmail(findStatisticsTargetsOn(date)).entrySet()) {
             String email = e.getKey();
             Summary summary = Summary.of(e.getValue());
             result.add(new CustomerStatisticsResponse(date, email, summary.orderCount(), summary.placedOrderCount(), summary.cancelledOrderCount(), summary.totalQuantity(), summary.totalAmount()));
@@ -280,8 +279,8 @@ public class OrderService {
     }
 
     // 서울 기준 접수일 : [그날 00:00, 다음 날 00:00)
-    private List<Order> findOrdersReceivedOn(LocalDate date) {
-        return orderRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(
+    private List<Order> findStatisticsTargetsOn(LocalDate date) {
+        return orderRepository.findStatisticsTargets(
                 date.atStartOfDay(), date.plusDays(1).atStartOfDay());
     }
 
