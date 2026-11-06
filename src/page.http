@@ -1,3 +1,7 @@
+###실행 환경
+###DB 테이블 구성 -> data.sql 실행 -> pagedata.sql 실행
+### 총 14개의 orderItem ghkrdls
+
 ### 1. 기본값 확인
 GET http://localhost:8080/api/v1/menus/page
 
