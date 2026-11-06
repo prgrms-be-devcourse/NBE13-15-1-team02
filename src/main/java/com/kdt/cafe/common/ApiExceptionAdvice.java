@@ -61,7 +61,7 @@ public class ApiExceptionAdvice {
     //오류 겹치면 400 -> 404 -> 409순서
     @ExceptionHandler(ValidationErrorException.class)
     public ResponseEntity<ApiError> validationErrorExceptionHandler(ValidationErrorException ex){
-        ApiError exception = new ApiError("VALIDATION_ERROR", ex.getMessage(), Map.of());
+        ApiError exception = new ApiError("VALIDATION_ERROR", ex.getMessage(),ex.getFieldErrors());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(exception);
     }
 
