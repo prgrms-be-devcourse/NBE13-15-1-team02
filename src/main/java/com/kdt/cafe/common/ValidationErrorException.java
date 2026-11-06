@@ -11,9 +11,9 @@ public class ValidationErrorException extends RuntimeException {
         this.fieldError=fieldError;
     }
 
-    public ValidationErrorException(String message) {
-        super(message);
-    }
+//    public ValidationErrorException(String message) {
+//        super(message);
+//    }
 
     public Map<String,String> getFieldErrors(){
         return fieldError;

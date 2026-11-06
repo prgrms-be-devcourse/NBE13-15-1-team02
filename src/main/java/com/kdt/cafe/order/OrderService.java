@@ -230,7 +230,7 @@ public class OrderService {
     // orderId가 null이거나 0 이하(400 에러), DB에 없음(404 에러)
     private Order getOrder(Long orderId) {
         if (orderId == null || orderId < 1) {
-            throw new ValidationErrorException(VALIDATION_MESSAGE);
+            throw new ValidationErrorException(VALIDATION_MESSAGE,Map.of("orderId","orderId 형식을 확인해 주세요."));
         }
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("주문을 찾을 수 없습니다."));
@@ -241,7 +241,7 @@ public class OrderService {
         Set<Long> seen = new HashSet<>();
         for (OrderItemRequest item : items) {
             if (!seen.add(item.menuId())) {
-                throw new ValidationErrorException(VALIDATION_MESSAGE);
+                throw new ValidationErrorException(VALIDATION_MESSAGE,Map.of("menuId","menuId가 중복됩니다"));
             }
         }
     }
@@ -250,14 +250,14 @@ public class OrderService {
     private void validateEmail(String email) {
         if (email == null || email.isEmpty() || email.length() > 100
                 || !EMAIL_PATTERN.matcher(email).matches()) {
-            throw new ValidationErrorException(VALIDATION_MESSAGE);
+            throw new ValidationErrorException(VALIDATION_MESSAGE,Map.of("email","이메일 형식을 확인해 주세요."));
         }
     }
 
     // A14, A17, A18, A24에서 입력받은 날짜가 허용 범위 안에 있는지 검사 -> 400 에러
     private void validateDate(LocalDate date) {
         if (date == null || date.isBefore(MIN_DATE) || date.isAfter(MAX_DATE)) {
-            throw new ValidationErrorException(VALIDATION_MESSAGE);
+            throw new ValidationErrorException(VALIDATION_MESSAGE,Map.of("date","DATE 형식을 확인해 주세요."));
         }
     }
 
