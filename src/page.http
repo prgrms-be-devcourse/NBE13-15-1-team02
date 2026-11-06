@@ -1,30 +1,37 @@
 ###실행 환경
 ###DB 테이블 구성 -> data.sql 실행 -> pagedata.sql 실행
-### 총 14개의 orderItem ghkrdls
+### 총 14개의 menu행 (id 1~15,중간에 id 5번 x)
 
 ### 1. 기본값 확인
+### page 기본값 0, size 기본값 10
 GET http://localhost:8080/api/v1/menus/page
 
 ### 2. 0번째 페이지 size는 5
+### number:0,size:5,totalelements 14, total pages:3
 GET http://localhost:8080/api/v1/menus/page?
     page=0&size =5
 
 ### 3. 범위초과 확인
+### content:[] (공백),number :99, size:5, totalElements:14,totalPages:3
 GET http://localhost:8080/api/v1/menus/page?
     page=99&size=5
 
 ### 4.page입력값 오류
+### 400 validationError
 GET http://localhost:8080/api/v1/menus/page?
     page=-1 &size =0
 
 ### 5.size 입력값 오류
+### 400 validationError
 GET http://localhost:8080/api/v1/menus/page?
     page =0&size=0
 
 ### 6.size 입력값 오류
+### 400 validationError
 GET http://localhost:8080/api/v1/menus/page?
     page =0&size=51
 
 ### 7.page 형식 오류
+### 400 validationError, fieldError:{page:"형식이 올바르지 않습니다}
 GET http://localhost:8080/api/v1/menus/page?
     page=abc
