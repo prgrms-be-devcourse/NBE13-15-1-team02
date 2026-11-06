@@ -29,17 +29,21 @@ FROM category c
 WHERE c.name = '싱글오리진'
   AND NOT EXISTS (SELECT 1 FROM menu m WHERE m.category_id = c.id AND m.name = 'Ethiopia Sidamo');
 
-
--- http요청 테스트용 데이터
--- E5번 실행 전 데이터 추가 (취소 마감 지난 PLACE 주문 데이터 등록)
+-- http 요청 테스트용 데이터 (requests/api-check.http의 E5에서 사용)
+-- 취소 마감이 지난 PLACED 주문 (배송일 = 2일 전), 주문 ID 1번으로 등록됨
+-- 같은 이메일의 주문이 없을 때만 등록
 INSERT INTO `order` (email, address, postcode, total_amount, status, created_at, shipping_date, memo)
-VALUES ('past@example.com', '서울시 강남구 테헤란로 1', '06236', 5000, 'PLACED',
-        CURDATE() - INTERVAL 2 DAY + INTERVAL 10 HOUR, CURDATE() - INTERVAL 2 DAY, '');
+SELECT 'past@example.com', '서울시 강남구 테헤란로 1', '06236', 5000, 'PLACED',
+       CURDATE() - INTERVAL 2 DAY + INTERVAL 10 HOUR, CURDATE() - INTERVAL 2 DAY, ''
+WHERE NOT EXISTS (SELECT 1 FROM `order` WHERE email = 'past@example.com');
 
+-- 위 주문의 항목: 주문 ID를 이메일로 찾고, 항목이 아직 없을 때만 등록
 INSERT INTO order_item (order_id, menu_id, menu_name, unit_price, quantity, line_amount)
-VALUES (LAST_INSERT_ID(), 1, 'Columbia Nariñó', 5000, 1, 5000);
-
-SELECT id, email, status, created_at, shipping_date FROM `order` ORDER BY id DESC LIMIT 1;
+SELECT o.id, m.id, m.name, m.price, 1, m.price
+FROM `order` o
+         JOIN menu m ON m.name = 'Columbia Nariñó'
+WHERE o.email = 'past@example.com'
+  AND NOT EXISTS (SELECT 1 FROM order_item oi WHERE oi.order_id = o.id);
 
 
 
