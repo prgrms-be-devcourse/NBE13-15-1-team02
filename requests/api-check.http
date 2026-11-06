@@ -1,6 +1,7 @@
 ### [실행 순서] 위에서 아래로 A01 → A02 → ... → A24 → 오류 E1 → E2 → ... → E6
 ###   - A21(메뉴 판매 중지)은 A23(재주문)보다 뒤에 실행. (재주문할 원본 주문에 판매 중지 메뉴가 없어야 함)
-###   - E4는 A21로 판매 중지한 메뉴를 사용하므로 A21 뒤에 실행. 마지막 '정리' 요청으로 판매 가능으로 변경.
+###   - E2는 A21로 판매 중지한 메뉴를 사용하므로 A21 뒤에 실행. 마지막 '정리' 요청으로 판매 가능으로 변경.
+###   - [추가] C1~C12(Redis 캐시 확인)는 '정리' 요청까지 모두 실행한 뒤 마지막에 실행.
 
 @baseUrl = http://127.0.0.1:8080
 @contentType = application/json
@@ -20,7 +21,7 @@
 # A11과 A12에서만 사용되는 더미데이터입니다.
 @emailDump = kdt1793b@test.com
 # 주문목록을 만들기 위해 행을 생성하는데 사용되는 데이터입니다
-# A17 A18 A24에서 통계데이터에 통계 합산값으로만 사용되고 직접 조회, 수정, 삭제는 하지 않습니다
+# A17 A18 A19에서 통계데이터에 통계 합산값으로만 사용되고 직접 조회, 수정, 삭제는 하지 않습니다
 # 행을 3개 만들기 위해 더미데이터로 선언하였습니다
 @emailDump2 = TEST_EMAIL@test.com
 # A16번 주문취소에 사용되는 행을 위해 만든 데이터입니다.
@@ -29,13 +30,13 @@
 # A02, A15에서 사용할 조회용 카테고리
 @categoryId = 1
 # A13, A22, A23에서 사용할 기본 주문
-@orderId = 2
+@orderId = 1
 # A16에서 사용할 아직 취소할 수 있는 주문(배송일 14시 전, PLACED)
-@cancelOrderId = 4
+@cancelOrderId = 3
 # A21, E4에서 사용할 메뉴
 @unavailableMenuId = 4
 # E5에서 사용할 취소 마감이 지난 주문
-@pastOrderId = 1
+@pastOrderId = 5
 # A14에서 조회할 배송일
 @shippingDate = 2026-11-06
 # A17, A18, A24에서 조회할 접수일
@@ -153,10 +154,10 @@ GET {{baseUrl}}/api/v1/orders?
     email={{emailDump}}
 
 
-### A13 주문 상세 - 200 / id=2, items 배열, status
+### A13 주문 상세 - 200 / id=1, items 배열, status
 GET {{baseUrl}}/api/v1/orders/{{orderId}}
 
-### n+1 문제 발생
+
 ### A14 배송 묶음 - 200 / 배열, 각 항목 shippingDate·email·address·postcode·orderIds·orderCount·totalQuantity·totalAmount·items
 GET {{baseUrl}}/api/v1/delivery-batches?shippingDate={{shippingDate}}
 
@@ -193,7 +194,7 @@ Content-Type: {{contentType}}
   "memo": "주문 확인 완료"
 }
 
-# n+1
+
 ### A23 재주문 - 201 / 새 id, status=PLACED, cancelledAt=null, memo=""
 POST {{baseUrl}}/api/v1/orders/{{orderId}}/reorder
 
@@ -206,7 +207,7 @@ Content-Type: {{contentType}}
   "available": false
 }
 
-# n+1
+
 ### A24 접수일별 고객 통계 - 200 / 배열, 각 항목 date·email·orderCount·placedOrderCount·cancelledOrderCount·totalQuantity·totalAmount
 GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
 
@@ -215,7 +216,7 @@ GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
 GET {{baseUrl}}/api/v1/statistics/orders?date=1999-12-31
 
 
-### E2. A03 카테고리 범위 초과 (최대 허용 30) - 400 / code,message,fieldErrors{name}
+### E2. A04 카테고리 범위 초과 (최대 허용 30) - 400 / code,message,fieldErrors{name}
 POST {{baseUrl}}/api/v1/categories
 Content-Type: application/json
 
@@ -241,6 +242,10 @@ Content-Type: {{contentType}}
   ]
 }
 
+
+### E5준비. 취소 마감이 지난 PLACED 주문 생성 (쿼리 콘솔에서 데이터 추가)
+
+
 ### E5. A16 취소 마감(배송일 14:00:00)이 지난 주문 취소 - 409 / code=ORDER_NOT_CANCELLABLE, message, fieldErrors{}
 POST {{baseUrl}}/api/v1/orders/{{pastOrderId}}/cancel
 
@@ -256,3 +261,95 @@ Content-Type: {{contentType}}
 {
   "available": true
 }
+
+
+# =====================================================================
+# [추가] 선택 심화: Redis 메뉴 조회 캐시 확인 (대상: A06 전체 메뉴)
+# - 위의 '정리' 요청까지 모두 실행한 뒤 C1부터 순서대로 실행
+# - 준비: Redis 컨테이너 실행 (docker run -d --name kdt-redis -p 6379:6379 redis:7)
+# - 캐시 키: cafe:menus:all / 값: 메뉴 배열 JSON / TTL: 60초 (MENU_CACHE_TTL_SECONDS)
+# - Redis 확인: docker exec -it kdt-redis redis-cli --raw
+#     GET cafe:menus:all  → 저장된 JSON 값
+#     TTL cafe:menus:all  → 남은 만료 시간(초), 키가 없으면 -2
+# - DB 재조회 여부: 앱 콘솔의 "메뉴 캐시 HIT/MISS" 로그와 select SQL 로그로 확인
+# - 변경(등록·수정·판매 중지/재개·삭제) 직후에는 캐시가 삭제되고,
+#   다음 첫 조회에서 변경 결과가 반영되며 다시 캐시에 저장됨
+# =====================================================================
+
+### C1 첫 조회 - 200 / 로그 "메뉴 캐시 MISS" + select SQL 1회 / Redis 에 키 생성, TTL 60 이하
+GET {{baseUrl}}/api/v1/menus
+
+
+### C2 다시 조회 (TTL 안에) - 200, C1 과 같은 값 / 로그 "메뉴 캐시 HIT", select SQL 없음
+GET {{baseUrl}}/api/v1/menus
+
+
+### C3 메뉴 등록 - 201 / 캐시 삭제 (TTL -2)
+# 만들어진 메뉴 id 를 cacheMenuId 에 저장해서 C5~C11 에서 사용
+POST {{baseUrl}}/api/v1/menus
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 1,
+  "name": "Cache Test Bean",
+  "price": 8000,
+  "description": "캐시 확인용 메뉴"
+}
+
+> {%
+    client.global.set("cacheMenuId", response.body.id);
+%}
+
+
+### C4 등록 후 첫 조회 - 200, Cache Test Bean 포함 / 로그 MISS + select SQL
+GET {{baseUrl}}/api/v1/menus
+
+
+### C5 이름·가격·카테고리 수정 - 200 / 캐시 삭제
+PUT {{baseUrl}}/api/v1/menus/{{cacheMenuId}}
+Content-Type: {{contentType}}
+
+{
+  "categoryId": 2,
+  "name": "Cache Test Bean Edited",
+  "price": 8500,
+  "description": "캐시 확인용 메뉴"
+}
+
+
+### C6 수정 후 첫 조회 - 200, 이름·가격·categoryId=2 반영 / 로그 MISS + select SQL
+GET {{baseUrl}}/api/v1/menus
+
+
+### C7 판매 중지 - 200 / 캐시 삭제
+PUT {{baseUrl}}/api/v1/menus/{{cacheMenuId}}/availability
+Content-Type: {{contentType}}
+
+{
+  "available": false
+}
+
+
+### C8 판매 중지 후 첫 조회 - 200, 해당 메뉴 available=false / 로그 MISS + select SQL
+GET {{baseUrl}}/api/v1/menus
+
+
+### C9 판매 재개 - 200 / 캐시 삭제
+PUT {{baseUrl}}/api/v1/menus/{{cacheMenuId}}/availability
+Content-Type: {{contentType}}
+
+{
+  "available": true
+}
+
+
+### C10 판매 재개 후 첫 조회 - 200, 해당 메뉴 available=true / 로그 MISS + select SQL
+GET {{baseUrl}}/api/v1/menus
+
+
+### C11 주문 이력 없는 메뉴 삭제 - 204 / 캐시 삭제
+DELETE {{baseUrl}}/api/v1/menus/{{cacheMenuId}}
+
+
+### C12 삭제 후 첫 조회 - 200, Cache Test Bean 없음 / 로그 MISS + select SQL
+GET {{baseUrl}}/api/v1/menus
