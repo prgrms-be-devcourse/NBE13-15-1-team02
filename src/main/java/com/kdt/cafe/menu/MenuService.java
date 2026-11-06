@@ -8,8 +8,13 @@ import com.kdt.cafe.common.MenuNotFoundException;
 import com.kdt.cafe.common.ValidationErrorException;
 import com.kdt.cafe.order.OrderItemRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 
 import java.util.List;
 
@@ -140,5 +145,18 @@ public class MenuService {
         menu.changeAvailable(request.available());
         menuRepository.flush();
         return MenuResponse.from(menu);
+    }
+
+    @Transactional(readOnly = true)
+    public MenuPageResponse findPage(int page, int size){
+        //범위검증
+        //page 기본값과 허용범위 : 기본값 0, 허용범위 0 이상의 정수
+        //size 기본값과 허용범위 : 기본 10, 허용범위 1~50의 정수
+        if(page <0 || size >50 || size<1)
+            throw new ValidationErrorException("입력값을 확인해 주세요.");
+        Pageable pageable = PageRequest.of(page,size, Sort.by("id"));
+        Page<Menu> menus = this.menuRepository.findAll(pageable);
+        return MenuPageResponse.from(menus);
+
     }
 }
