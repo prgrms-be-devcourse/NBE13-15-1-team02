@@ -71,4 +71,11 @@ public class MenuApiController {
                                         @Valid @RequestBody MenuAvailableRequest request) {
         return menuService.changeAvailable(id, request);
     }
+
+    @GetMapping("/page")
+    public MenuPageResponse findPage(@RequestParam (defaultValue = "0") int page,
+                                             @RequestParam (defaultValue = "10")int size){
+        return this.menuService.findPage(page,size);
+    }
+
 }
