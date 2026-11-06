@@ -1,18 +1,5 @@
 # Grids & Circle 카페 메뉴 관리 서비스
 
-> 명세 README 필수 항목 대응표 — 작성하면서 체크
-
-| # | 명세 필수 내용 | 위치 | 작성 |
-|:---:|:---|:---|:---:|
-| 1 | 팀원별 담당 작업, 공동 구현 시 각자의 작업 내용 | 4. 팀 | ⬜ |
-| 2 | 완료·미완료 기능과 미해결 오류 유무 (없으면 없다고 표시) | 5. 구현 현황 | ⬜ |
-| 3 | 실제 Java·Spring Boot·MySQL 버전, DB 설정 위치/환경변수 이름과 예시 값 | 1. 소개, 2.1 환경 변수 | ⬜ |
-| 4 | 새 DB 준비·초기 데이터 등록 절차, 백엔드·web 실행 폴더·명령·주소 | 2.2 ~ 2.4 | ⬜ |
-| 5 | 테스트 실행 명령, .http 경로·변수·실행 순서, 시각 경계값 확인 방법 | 3. 검증 | ⬜ |
-| 6 | 평가 대상 브랜치·태그 또는 커밋, 선택 심화 코드·검증 방법 | 6. 제출 정보 | ⬜ |
-
-※ 실제 비밀번호·API 키는 저장소에 올리지 않는다.
-
 ---
 
 ## 1. 프로젝트 소개
@@ -34,7 +21,7 @@ NBE13-15-1-team02
 ├── src/main/resources
 │   ├── application.yaml   # DB 접속 정보 (환경변수 주입, 2.1 참고)
 │   ├── schema.sql         # 테이블 생성 DDL
-│   └── data.sql           # 초기 데이터 (카테고리 2개, 메뉴 4개)
+│   └── data.sql           # 초기 데이터 (카테고리 2개, 메뉴 4개) + 테스트용 주문 1건
 ├── src/test/java          # Controller 자동 테스트 (3.2 참고)
 ├── requests
 │   └── api-check.http     # API 확인 요청 A01~A24 + 오류 6건 (3.1 참고)
@@ -122,13 +109,16 @@ docker run -d --name kdt-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=your_password
 **3) 확인**
 
 Database 탭에서 `kdt-spring` 우클릭 -> **New -> Query Console**을 열고 아래를 실행합니다.<br>
-카테고리 2개(싱글오리진, 블렌드)와 메뉴 4개가 조회되면 성공입니다.
+카테고리 2개(싱글오리진, 블렌드), 메뉴 4개, 테스트용 주문 1건이 조회되면 성공입니다.
 
 ```sql
 USE `kdt-spring`;
 SELECT * FROM category;
 SELECT id, category_id, name, price, available FROM menu;
+SELECT id, email, status, shipping_date FROM `order`;
 ```
+
+테스트용 주문(`past@example.com`)은 3.2의 E5에서 사용하는 취소 마감이 지난 주문입니다.
 
 ### 2.3 백엔드 실행 
 
@@ -178,16 +168,78 @@ java -m jdk.httpserver -b 127.0.0.1 -p 8000
 첫 화면인 원두 주문 화면에 초기 메뉴 4개가 보이면 성공입니다.<br>
 연결되지 않으면 화면의 **연결 설정 -> 실제 API 연결**에서 서버 주소가 `http://127.0.0.1:8080`인지 확인합니다.
 
-## 3. 검증 
-### 3.1 requests/api-check.http (API 확인 요청)
-- 변수 설명, 실행 순서, 준비 데이터
+## 3. 검증
+### 3.1 테스트 실행
 
-IntelliJ HTTP Client로 실행합니다. 파일을 열고 각 요청 옆 ▶ 버튼을 누르거나, 상단 **Run All**로 전체를 순서대로 실행합니다.
+프로젝트 루트에서 실행합니다.
 
-**준비**: 2.2의 초기 데이터가 들어간 상태에서 2.3 백엔드를 실행합니다.
+```bash
+./gradlew test        # Windows: .\gradlew test
+```
 
-### 3.2 자동 테스트
-- `./gradlew test`, 테스트 6개가 각각 확인하는 것
+특정 테스트만 실행할때는 `--tests`로 클래스를 지정합니다.
+
+```bash
+./gradlew test --tests "com.kdt.cafe.category.CategoryApiContorller"    # MacOS·Linux
+.\gradlew test --tests "com.kdt.cafe.category.CategoryApiContorller"    # Windows
+```
+
+Controller 테스트는 모의 Service를 사용해 DB 연결 없이 실행됩니다.
+
+| 분류 | 테스트 | 확인하는 요구사항 |
+|:---|:---|:---|
+| 정상 처리 | `CategoryApiControllerTest.registerCategory` | 카테고리 등록(A03)은 201과 생성된 카테고리의 id·name을 반환한다 |
+| 정상 처리 | `CategoryApiControllerTest.deleteCategory`| 카테고리 삭제(A05)는 204와 빈 본문을 반환한다 |
+| 입력 오류 | `MenuApiControllerTest.changeAvailable_without_available_returns_400` | 판매 여부 변경(A21)에 `available`이 없으면 400 `VALIDATION_ERROR`와 `fieldErrors.available`을 반환한다 |
+| 입력 오류 | `MenuApiControllerTest.findOne_with_non_numeric_id_returns_400` | 메뉴 상세(A07)의 ID가 숫자가 아니면 400 `VALIDATION_ERROR`와 `fieldErrors.menuId`를 반환한다 |
+| 대상 없음 | `OrderApiControllerTest.order_not_exist_is_404` | 없는 주문을 상세 조회(A13)하면 404 `ORDER_NOT_FOUND`와 해당 메세지를 반환한다 |
+| 업무 위반 | `OrderApiControllerTest.cancel_after_deadline_is_409` | 취소 마감이 지난 주문을 취소(A16)하면 409 `ORDER_NOT_CANCELLABLE`과 해당 메세지를 반환한다 |
+
+
+### 3.2 API 확인 요청 (`requests/api-check.http`)
+
+IntelliJ HTTP Client로 실행합니다. 2.3의 벡엔드가 시랳ㅇ중이어야 하며, `data.sql`을 실행한 상태에서 시작합니다.<br>
+파일을 열고 위에서 아래로 각 요청 옆 ▶ 버튼을 눌러 순서대로 실행하거나, 상단 **Run All**로 전체를 순서대로 실행합니다.
+
+**변수**
+
+ID는 위에서부터 순서대로 실행했을 때 생성되는 번호를 기준으로 미리 정해 두었습니다.
+
+| 변수 | 값 | 사용처 |
+|:---|:---|:---|
+| `baseUrl` | `http://127.0.0.1:8080` | 모든 요청 |
+| `categoryId` | `1` | A02, A15 (초기 카테고리 조회) |
+| `categoryIdDump` | `3` | A04, A05 (A03에서 새로 등록한 카테고리) |
+| `menuId` | `3` | A07 (초기 메뉴 조회) |
+| `menuIdDump` | `5` | A09, A10 (A08에서 새로 등록한 메뉴) |
+| `unavailableMenuId` | `4` | A21, E4 (판매 중지 대상 메뉴) |
+| `emailDump` · `emailDump2` · `emailDump3` | 테스트용 이메일 | A11 및 추가 주문 2건, A12 |
+| `orderId` | `2` | A13, A22, A23 (A11에서 접수한 주문) |
+| `cancelOrderId` | `4` | A16 (취소 가능한 주문) |
+| `pastOrderId` | `1` | E5 (data.sql로 등록된 취소 마감이 지난 주문) |
+| `shippingDate` | `2026-11-06` | A14 (조회할 배송일) |
+| `today` | `2026-11-05` | A17, A18, A24 (조회할 접수일) |
+
+**실행 순서**
+
+1. **정상 요청 A01 → A24**를 순서대로 실행합니다. 단, **A21(판매 중지)은 A23(재주문) 뒤**에 실행합니다. 재주문할 원본 주문에 판매 중지 메뉴가 없어야 하기 때문입니다.
+2. **오류 요청 E1 → E6**을 실행합니다.
+3. 마지막 **정리** 요청으로 A21에서 판매 중지한 메뉴를 판매 가능으로 되돌립니다.
+
+| 번호 | 대상 API | 상황 | 기대 결과 |
+|:---:|:---|:---|:---|
+| E1 | A17 | 허용 범위(2000-01-01 ~ 2099-12-31) 밖 날짜 | 400 `VALIDATION_ERROR` |
+| E2 | A03 | 카테고리명 30자 초과 | 400 `VALIDATION_ERROR`, `fieldErrors.name` |
+| E3 | A07 | 존재하지 않는 메뉴 조회 | 404 `MENU_NOT_FOUND` |
+| E4 | A11 | 판매 중지 메뉴로 주문 (A21 실행 후) | 409 `MENU_UNAVAILABLE` |
+| E5 | A16 | 취소 마감(배송일 14:00:00)이 지난 주문 취소 | 409 `ORDER_NOT_CANCELLABLE` |
+| E6 | A10 | 주문에 사용된 메뉴 삭제 | 409 `MENU_IN_USE` |
+
+각 요청 위 주석(`###`)에 기대 상태 코드와 확인할 응답 필드를 적어 두었습니다.
+
+**다시 실행할 때**
+
+실행하면 카테고리·메뉴·주문이 새로 생기고 ID가 바뀌므로, 다시 실행하기 전에 테이블을 지우고 2.2의 `schema.sql` → `data.sql`부터 실행해 처음 상태로 되돌립니다.
 
 
 ### 3.3 시각 경계값 확인 방법

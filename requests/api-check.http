@@ -1,6 +1,6 @@
 ### [실행 순서] 위에서 아래로 A01 → A02 → ... → A24 → 오류 E1 → E2 → ... → E6
 ###   - A21(메뉴 판매 중지)은 A23(재주문)보다 뒤에 실행. (재주문할 원본 주문에 판매 중지 메뉴가 없어야 함)
-###   - E2는 A21로 판매 중지한 메뉴를 사용하므로 A21 뒤에 실행. 마지막 '정리' 요청으로 판매 가능으로 변경.
+###   - E4는 A21로 판매 중지한 메뉴를 사용하므로 A21 뒤에 실행. 마지막 '정리' 요청으로 판매 가능으로 변경.
 
 @baseUrl = http://127.0.0.1:8080
 @contentType = application/json
@@ -20,7 +20,7 @@
 # A11과 A12에서만 사용되는 더미데이터입니다.
 @emailDump = kdt1793b@test.com
 # 주문목록을 만들기 위해 행을 생성하는데 사용되는 데이터입니다
-# A17 A18 A19에서 통계데이터에 통계 합산값으로만 사용되고 직접 조회, 수정, 삭제는 하지 않습니다
+# A17 A18 A24에서 통계데이터에 통계 합산값으로만 사용되고 직접 조회, 수정, 삭제는 하지 않습니다
 # 행을 3개 만들기 위해 더미데이터로 선언하였습니다
 @emailDump2 = TEST_EMAIL@test.com
 # A16번 주문취소에 사용되는 행을 위해 만든 데이터입니다.
@@ -29,13 +29,13 @@
 # A02, A15에서 사용할 조회용 카테고리
 @categoryId = 1
 # A13, A22, A23에서 사용할 기본 주문
-@orderId = 1
+@orderId = 2
 # A16에서 사용할 아직 취소할 수 있는 주문(배송일 14시 전, PLACED)
-@cancelOrderId = 3
+@cancelOrderId = 4
 # A21, E4에서 사용할 메뉴
 @unavailableMenuId = 4
 # E5에서 사용할 취소 마감이 지난 주문
-@pastOrderId = 5
+@pastOrderId = 1
 # A14에서 조회할 배송일
 @shippingDate = 2026-11-06
 # A17, A18, A24에서 조회할 접수일
@@ -153,10 +153,10 @@ GET {{baseUrl}}/api/v1/orders?
     email={{emailDump}}
 
 
-### A13 주문 상세 - 200 / id=1, items 배열, status
+### A13 주문 상세 - 200 / id=2, items 배열, status
 GET {{baseUrl}}/api/v1/orders/{{orderId}}
 
-### n+1 문제 발생
+
 ### A14 배송 묶음 - 200 / 배열, 각 항목 shippingDate·email·address·postcode·orderIds·orderCount·totalQuantity·totalAmount·items
 GET {{baseUrl}}/api/v1/delivery-batches?shippingDate={{shippingDate}}
 
@@ -193,7 +193,7 @@ Content-Type: {{contentType}}
   "memo": "주문 확인 완료"
 }
 
-# n+1
+
 ### A23 재주문 - 201 / 새 id, status=PLACED, cancelledAt=null, memo=""
 POST {{baseUrl}}/api/v1/orders/{{orderId}}/reorder
 
@@ -206,7 +206,7 @@ Content-Type: {{contentType}}
   "available": false
 }
 
-# n+1
+
 ### A24 접수일별 고객 통계 - 200 / 배열, 각 항목 date·email·orderCount·placedOrderCount·cancelledOrderCount·totalQuantity·totalAmount
 GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
 
@@ -215,7 +215,7 @@ GET {{baseUrl}}/api/v1/statistics/customers?date={{today}}
 GET {{baseUrl}}/api/v1/statistics/orders?date=1999-12-31
 
 
-### E2. A04 카테고리 범위 초과 (최대 허용 30) - 400 / code,message,fieldErrors{name}
+### E2. A03 카테고리 범위 초과 (최대 허용 30) - 400 / code,message,fieldErrors{name}
 POST {{baseUrl}}/api/v1/categories
 Content-Type: application/json
 
@@ -240,9 +240,6 @@ Content-Type: {{contentType}}
     { "menuId": {{unavailableMenuId}}, "quantity": 1 }
   ]
 }
-
-
-### E5준비. 취소 마감이 지난 PLACED 주문 생성 (쿼리 콘솔에서 데이터 추가)
 
 
 ### E5. A16 취소 마감(배송일 14:00:00)이 지난 주문 취소 - 409 / code=ORDER_NOT_CANCELLABLE, message, fieldErrors{}
