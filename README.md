@@ -252,7 +252,7 @@ ID는 위에서부터 순서대로 실행했을 때 생성되는 번호를 기�
 | 이름 | 담당 작업 |
 |:---|:---|
 | 천승혁 | "여기에 작성해주세요" |
-| 이재민 | "여기에 작성해주세요" |
+| 이재민 | "메뉴 API(A06~A10, A19~A21) - menu 패키지 전체, 발표 PPT 제작" |
 | 이지원 | "여기에 작성해주세요" |
 | 이동근 | 카테고리 API(A01~A05, A15) - category 패키지 전체, webConfig 설정 파일, README.md 작성|
 
@@ -308,7 +308,7 @@ ID는 위에서부터 순서대로 실행했을 때 생성되는 번호를 기�
 |:---|:---:|
 | 업무 규칙 자동 테스트 | ⬜ |
 | 실제 DB 저장·롤백 테스트 | ⬜ |
-| Redis 메뉴 조회 캐시 | ⬜ |
+| Redis 메뉴 조회 캐시 | ✅  |
 | 메뉴 페이징 API | ⬜ |
 | RestClient 외부 조회 | ⬜ |
 
@@ -329,7 +329,21 @@ git push origin submit-v1  # 태그 푸시 <br>
 
 - 없음
 - 한다면 예시는 아래에
-
+- 
+**Redis 메뉴 조회 캐시** (담당: 이재민)
+- 대상: A06 전체 메뉴 (`GET /api/v1/menus`)
+- 코드: `src/main/java/com/kdt/cafe/menu/MenuListCache.java`, `src/main/java/com/kdt/cafe/menu/MenuService.java`
+- 사전 준비: Redis 컨테이너 실행 <br>
+  `docker run -d --name kdt-redis -p 6379:6379 redis:7` (이미 있으면 `docker start kdt-redis`)
+- 자동 테스트: `src/test/java/com/kdt/cafe/menu/MenuServiceCacheTest.java`
+- 검증: `./gradlew test --tests "*MenuServiceCacheTest*"`
+- 수동 확인: `requests/api-check.http`의 C1~C12 (3.2의 정리 요청까지 실행한 뒤 실행) <br>
+  `docker exec -it kdt-redis redis-cli --raw`로 접속해 `GET cafe:menus:all`, `TTL cafe:menus:all` 확인
+- 확인 내용:
+  - 캐시 키 `cafe:menus:all`, 값은 메뉴 배열 JSON, TTL 60초
+  - 첫 조회는 캐시 MISS로 DB를 조회한 뒤 Redis에 저장하고, TTL 안에 다시 조회하면 캐시 HIT로 DB를 조회하지 않음
+  - 메뉴 등록·수정·판매 여부 변경·삭제 시 트랜잭션 커밋 후 캐시를 삭제하고, 다음 조회에서 변경 내용이 반영되어 다시 저장됨
+  
 **업무 규칙 자동 테스트**
 - 코드: `/src/test/java/com/kdt/cafe/order/shippingDateCalculatorTest.java`
 - 검증: `./gradlew test --tests "*shippingDateCalculatorTest*"`
