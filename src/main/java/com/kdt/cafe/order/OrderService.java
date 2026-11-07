@@ -183,11 +183,11 @@ public class OrderService {
     @Transactional
     public OrderResponse reorder(Long orderId) {
         // 원본 주문 꺼내기 -> 없으면 404 에러
-        Order original = getOrder(orderId);     //여기서 findByid, select 쿼리 실행
+        Order original = getOrderWithMenus(orderId);
 
         // 판매 중지 메뉴 검사 -> 하나라도 판매 중지면 409 에러
         for(OrderItem item : original.getItems()) {
-            checkAvailable(item.getMenu());     //id외의 필드를 읽으면 아이템마다 select from menu where id=?가 나간다
+            checkAvailable(item.getMenu());
         }
 
         // 배송지 비교 (배송일은 재주문 시각 기준으로 다시 계산)
@@ -204,6 +204,15 @@ public class OrderService {
         // 저장
         orderRepository.save(newOrder);
         return OrderResponse.from(newOrder);
+    }
+
+    // A23 재주문 전용 : items, menu 함께 조회
+    private Order getOrderWithMenus(Long orderId) {
+        if (orderId == null || orderId < 1) {
+            throw new ValidationErrorException(VALIDATION_MESSAGE, Map.of("orderId", "orderId 형식을 확인해 주세요."));
+        }
+        return orderRepository.findWithItemsAndMenus(orderId)
+                .orElseThrow(() -> new OrderNotFoundException("주문을 찾을 수 없습니다."));
     }
 
     // A24 접수일별 고객 통계 : 이메일 오름차순, 모두 취소한 고객도 포함
