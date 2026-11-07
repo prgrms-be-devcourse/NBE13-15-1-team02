@@ -7,9 +7,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -17,8 +17,6 @@ import java.util.regex.Pattern;
 @Service
 @Transactional(readOnly = true)
 public class OrderService {
-
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     // 명세 이메일 정규식
     private static final Pattern EMAIL_PATTERN =
@@ -39,11 +37,13 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final MenuRepository menuRepository;
+    private final Clock clock;
 
     @Autowired
-    public OrderService(OrderRepository orderRepository, MenuRepository menuRepository) {
+    public OrderService(OrderRepository orderRepository, MenuRepository menuRepository, Clock clock) {
         this.orderRepository = orderRepository;
         this.menuRepository = menuRepository;
+        this.clock = clock;
     }
 
     // A11 주문 접수
@@ -233,7 +233,7 @@ public class OrderService {
 
     // 현재 시각 : 서울 기준, 초 단위 (초 아래 소수점 단위 자르기)
     private LocalDateTime now() {
-        return LocalDateTime.now(SEOUL).truncatedTo(ChronoUnit.SECONDS);
+        return LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS);
     }
 
     // orderId가 null이거나 0 이하(400 에러), DB에 없음(404 에러)
