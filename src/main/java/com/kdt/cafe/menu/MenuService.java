@@ -8,10 +8,15 @@ import com.kdt.cafe.common.MenuNotFoundException;
 import com.kdt.cafe.common.ValidationErrorException;
 import com.kdt.cafe.order.OrderItemRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class MenuService {
@@ -35,9 +40,7 @@ public class MenuService {
     // ID는 1 이상의 정수여야 한다 (아니면 400)
     private void validateId(Long id, String field) {
         if (id == null || id < 1) {
-            // TODO: ValidationErrorException(String, Map) 생성자가 생기면
-            //       Map.of(field, "1 이상의 정수여야 합니다.") 추가
-            throw new ValidationErrorException("입력값을 확인해 주세요.");
+            throw new ValidationErrorException("입력값을 확인해 주세요.", Map.of(field, "id 형식을 확인해 주세요."));
         }
     }
 
@@ -132,11 +135,9 @@ public class MenuService {
     // A20 메뉴명 검색
     @Transactional(readOnly = true)
     public List<MenuResponse> findByName(String name) {
-        String keyword = (name == null) ? "" : name.trim(); //keyword
+        String keyword = (name == null) ? "" : name.trim();
         if (keyword.isEmpty() || keyword.length() > 100) {
-            // TODO: 생성자가 생기면 Map.of("keyword", "검색어는 공백 제외 1~100자여야 합니다.") 추가
-            // Map.of("keyword",...) 이 부분에서 keyword는 따옴표로 감싸있어 변수가 아닌 문자열 리터럴이다.
-            throw new ValidationErrorException("입력값을 확인해 주세요.");
+            throw new ValidationErrorException("입력값을 확인해 주세요.", Map.of("keyword", "메뉴 형식을 확인해 주세요."));
         }
         return menuRepository.findAllByOrderByIdAsc().stream()
                 .filter(menu -> menu.getName().contains(keyword))
@@ -154,5 +155,19 @@ public class MenuService {
         menuRepository.flush();
         menuListCache.evictAfterCommit();
         return MenuResponse.from(menu);
+    }
+
+    @Transactional(readOnly = true)
+    public MenuPageResponse findPage(int page, int size) {
+        //범위검증
+        //page 기본값과 허용범위 : 기본값 0, 허용범위 0 이상의 정수
+        //size 기본값과 허용범위 : 기본 10, 허용범위 1~50의 정수
+        if (page < 0)
+            throw new ValidationErrorException("입력값을 확인해 주세요.", Map.of("page", "page는 0 이상이어야합니다."));
+        if (size > 50 || size < 1)
+            throw new ValidationErrorException("입력값을 확인해 주세요.", Map.of("size", "size는 1이상 50 이하여야합니다"));
+        Pageable pageable = PageRequest.of(page, size, Sort.by("id"));
+        Page<Menu> menus = this.menuRepository.findAll(pageable);
+        return MenuPageResponse.from(menus);
     }
 }
