@@ -7,9 +7,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -17,8 +17,6 @@ import java.util.regex.Pattern;
 @Service
 @Transactional(readOnly = true)
 public class OrderService {
-
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     // 명세 이메일 정규식
     private static final Pattern EMAIL_PATTERN =
@@ -39,11 +37,13 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final MenuRepository menuRepository;
+    private final Clock clock;
 
     @Autowired
-    public OrderService(OrderRepository orderRepository, MenuRepository menuRepository) {
+    public OrderService(OrderRepository orderRepository, MenuRepository menuRepository, Clock clock) {
         this.orderRepository = orderRepository;
         this.menuRepository = menuRepository;
+        this.clock = clock;
     }
 
     // A11 주문 접수
@@ -183,11 +183,11 @@ public class OrderService {
     @Transactional
     public OrderResponse reorder(Long orderId) {
         // 원본 주문 꺼내기 -> 없으면 404 에러
-        Order original = getOrder(orderId);     //여기서 findByid, select 쿼리 실행
+        Order original = getOrderWithMenus(orderId);
 
         // 판매 중지 메뉴 검사 -> 하나라도 판매 중지면 409 에러
         for(OrderItem item : original.getItems()) {
-            checkAvailable(item.getMenu());     //id외의 필드를 읽으면 아이템마다 select from menu where id=?가 나간다
+            checkAvailable(item.getMenu());
         }
 
         // 배송지 비교 (배송일은 재주문 시각 기준으로 다시 계산)
@@ -204,6 +204,15 @@ public class OrderService {
         // 저장
         orderRepository.save(newOrder);
         return OrderResponse.from(newOrder);
+    }
+
+    // A23 재주문 전용 : items, menu 함께 조회
+    private Order getOrderWithMenus(Long orderId) {
+        if (orderId == null || orderId < 1) {
+            throw new ValidationErrorException(VALIDATION_MESSAGE, Map.of("orderId", "orderId 형식을 확인해 주세요."));
+        }
+        return orderRepository.findWithItemsAndMenus(orderId)
+                .orElseThrow(() -> new OrderNotFoundException("주문을 찾을 수 없습니다."));
     }
 
     // A24 접수일별 고객 통계 : 이메일 오름차순, 모두 취소한 고객도 포함
@@ -224,7 +233,7 @@ public class OrderService {
 
     // 현재 시각 : 서울 기준, 초 단위 (초 아래 소수점 단위 자르기)
     private LocalDateTime now() {
-        return LocalDateTime.now(SEOUL).truncatedTo(ChronoUnit.SECONDS);
+        return LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS);
     }
 
     // orderId가 null이거나 0 이하(400 에러), DB에 없음(404 에러)

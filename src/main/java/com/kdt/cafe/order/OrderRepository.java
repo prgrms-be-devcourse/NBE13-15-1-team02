@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order,Long> {
 
@@ -30,4 +31,8 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
     List<Order> findStatisticsTargets(@Param("start") LocalDateTime start,
                                        @Param("end") LocalDateTime end);
 
+    // A23 재주문 전용 주문 조회 : 원본 주문 + items + menu 함께 조회 (N+1 방지)
+    @Query("select distinct o from Order o join fetch o.items i join fetch i.menu " +
+            "where o.id = :id")
+    Optional<Order> findWithItemsAndMenus(@Param("id") Long id);
 }
