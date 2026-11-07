@@ -22,9 +22,11 @@ NBE13-15-1-team02
 │   ├── application.yaml   # DB 접속 정보 (환경변수 주입, 2.1 참고)
 │   ├── schema.sql         # 테이블 생성 DDL
 │   └── data.sql           # 초기 데이터 (카테고리 2개, 메뉴 4개) + 테스트용 주문 1건
-├── src/test/java          # Controller 자동 테스트 (3.2 참고)
+├── src/test/java          # Controller 자동 테스트, DB 저장·롤백 테스트 (3.1, 6절 참고)
+├── src/test/resources
+│   └── application-test.yaml   # 테스트 DB 설정 (kdt-spring-test)
 ├── requests
-│   └── api-check.http     # API 확인 요청 A01~A24 + 오류 6건 (3.1 참고)
+│   └── api-check.http     # API 확인 요청 A01~A24 + 오류 6건 (3.2 참고)
 ├── web                    # 제공 화면, 8000 포트로 별도 실행 (2.4 참고)
 └── build.gradle
 ```
@@ -53,7 +55,7 @@ DB 접속 정보는 프로젝트 루트의 `.env`에서 읽습니다.<br>
 `spring.datasource`의 `url` · `username` · `password`가 각각 `${DB_URL}` · `${DB_USERNAME}` · `${DB_PASSWORD}`를 사용합니다.
 
 `.env`는 저장소에 포함되지 않으므로 예시 파일(`.env.example`)을 복사해 비밀번호를 채웁니다.<br>
-`DB_URL`의 포트를 내 Docker MySQL 포트에 맞춰 바꿔주세요. (예: `-p 3307:3306` -> `3307`)
+`DB_URL`과 `TEST_DB_URL`의 포트를 내 Docker MySQL 포트에 맞춰 바꿔주세요. (예: `-p 3307:3306` -> `3307`)
 
 ```bash
 cp .env.example .env        # Windows: copy .env.example .env
@@ -64,6 +66,7 @@ cp .env.example .env        # Windows: copy .env.example .env
 | `DB_URL` | JDBC 접속 주소  | `jdbc:mysql://127.0.0.1:3306/kdt-spring?allowPublicKeyRetrieval=true&sslMode=DISABLED` |
 | `DB_USERNAME` | DB 사용자  | `root` |
 | `DB_PASSWORD` | DB 비밀번호 | `your_password` |
+| `TEST_DB_URL` | 테스트 전용 DB 접속 주소 (6절 참고) | `jdbc:mysql://127.0.0.1:3306/kdt-spring-test?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&sslMode=DISABLED` |
 
 ### 2.2 DB 준비
 
@@ -177,14 +180,15 @@ java -m jdk.httpserver -b 127.0.0.1 -p 8000
 ./gradlew test        # Windows: .\gradlew test
 ```
 
-특정 테스트만 실행할때는 `--tests`로 클래스를 지정합니다.
+특정 테스트만 실행할 때는 `--tests`로 클래스를 지정합니다.
 
 ```bash
-./gradlew test --tests "com.kdt.cafe.category.CategoryApiContorller"    # MacOS·Linux
-.\gradlew test --tests "com.kdt.cafe.category.CategoryApiContorller"    # Windows
+./gradlew test --tests "com.kdt.cafe.category.CategoryApiControllerTest"    # MacOS·Linux
+.\gradlew test --tests "com.kdt.cafe.category.CategoryApiControllerTest"    # Windows
 ```
 
-Controller 테스트는 모의 Service를 사용해 DB 연결 없이 실행됩니다.
+Controller 테스트는 모의 Service를 사용해 DB 연결 없이 실행됩니다.<br>
+전체 테스트(`./gradlew test`)에는 DB 저장·롤백 테스트가 포함되므로, 2.2의 MySQL 컨테이너와 `.env`의 `TEST_DB_URL`이 필요합니다.
 
 | 분류 | 테스트 | 확인하는 요구사항 |
 |:---|:---|:---|
@@ -198,12 +202,13 @@ Controller 테스트는 모의 Service를 사용해 DB 연결 없이 실행됩�
 
 ### 3.2 API 확인 요청 (`requests/api-check.http`)
 
-IntelliJ HTTP Client로 실행합니다. 2.3의 벡엔드가 시랳ㅇ중이어야 하며, `data.sql`을 실행한 상태에서 시작합니다.<br>
+IntelliJ HTTP Client로 실행합니다. 2.3의 백엔드가 실행 중이어야 하며, `data.sql`을 실행한 상태에서 시작합니다.<br>
 파일을 열고 위에서 아래로 각 요청 옆 ▶ 버튼을 눌러 순서대로 실행하거나, 상단 **Run All**로 전체를 순서대로 실행합니다.
 
 **변수**
 
-ID는 위에서부터 순서대로 실행했을 때 생성되는 번호를 기준으로 미리 정해 두었습니다.
+ID는 위에서부터 순서대로 실행했을 때 생성되는 번호를 기준으로 미리 정해 두었습니다.<br>
+shippingDate와 today는 실행하는 날짜에 맞춰 바꿉니다.
 
 | 변수 | 값 | 사용처 |
 |:---|:---|:---|
@@ -254,7 +259,7 @@ ID는 위에서부터 순서대로 실행했을 때 생성되는 번호를 기�
 | 천승혁 | "여기에 작성해주세요" |
 | 이재민 | "여기에 작성해주세요" |
 | 이지원 | "여기에 작성해주세요" |
-| 이동근 | 카테고리 API(A01~A05, A15) - category 패키지 전체, webConfig 설정 파일, README.md 작성|
+| 이동근 | 카테고리 API(A01~A05, A15) - category 패키지 전체, WebConfig 설정 파일, README.md 작성|
 
 ### 공동 구현 시 각자의 작업 내용
 | 공동 구현 항목 | 이름 | 각자의 작업 내용 |
@@ -280,7 +285,7 @@ ID는 위에서부터 순서대로 실행했을 때 생성되는 번호를 기�
 | A06 | 전체 메뉴 | ✅ | 
 | A07 | 메뉴 상세 | ✅ | 
 | A08 | 메뉴 등록 | ✅ | 
-| A09 | 메뉴 일발 수정 | ✅ | 
+| A09 | 메뉴 일반 수정 | ✅ | 
 | A10 | 메뉴 삭제 | ✅ | 
 | A11 | 주문 접수 | ✅ | 
 | A12 | 이메일별 주문 | ✅ | 
@@ -307,12 +312,12 @@ ID는 위에서부터 순서대로 실행했을 때 생성되는 번호를 기�
 | 항목 | 상태 |
 |:---|:---:|
 | 업무 규칙 자동 테스트 | ⬜ |
-| 실제 DB 저장·롤백 테스트 | ⬜ |
+| 실제 DB 저장·롤백 테스트 | ✅ |
 | Redis 메뉴 조회 캐시 | ⬜ |
-| 메뉴 페이징 API | ⬜ |
+| 메뉴 페이징 API | ✅ |
 | RestClient 외부 조회 | ⬜ |
 
-## 6. 제출 정보 (필수 6)
+## 6. 제출 정보
 
 ### 평가 대상
 
@@ -327,17 +332,60 @@ git push origin submit-v1  # 태그 푸시 <br>
 
 ### 선택 심화
 
-- 없음
-- 한다면 예시는 아래에
+**2. 실제 DB 저장·롤백 테스트**
 
-**업무 규칙 자동 테스트**
-- 코드: `/src/test/java/com/kdt/cafe/order/shippingDateCalculatorTest.java`
-- 검증: `./gradlew test --tests "*shippingDateCalculatorTest*"`
-- 확인 내용: 
+- 코드: `src/test/java/com/kdt/cafe/order/OrderDbSaveRollbackTest.java`
+- 테스트 DB: 앱 실행용 `kdt-spring`과 분리된 `kdt-spring-test` 사용 (`src/test/resources/application-test.yaml`, `.env`의 `TEST_DB_URL`)<br>
+  테스트 시작 시 `schema.sql`·`data.sql`이 자동 실행되고, DB가 없으면 자동 생성됩니다.
+- 실행 전: 2.2의 MySQL 컨테이너 실행, `.env`에 `TEST_DB_URL` 설정
+
+- 실행:
+
+```bash
+./gradlew test --tests "com.kdt.cafe.order.OrderDbSaveRollbackTest"    # MacOS·Linux
+.\gradlew test --tests "com.kdt.cafe.order.OrderDbSaveRollbackTest"    # Windows
+```
+
+- 검증 흐름:
+    1. 정상 주문 A → 실제 DB의 주문·항목 행에서 메뉴명·단가·수량·항목 금액·총액 확인
+    2. 주문 B → 주문 행과 항목을 INSERT한 직후 강제 실패 (제품 코드 변경 없이 테스트의 스파이로 실패 발생)
+    3. 롤백 확인 → DB에 A만 남고 B의 주문·항목 행 없음
+    4. 정상 주문 C → 실패 이후에도 정상 저장 확인
+- 매 실행 전 주문·항목 테이블을 비우므로 연속 실행해도 결과가 같습니다.
+- 콘솔의 `[① ...]` ~ `[④ ...]` 줄에서 단계별 DB 상태를 확인할 수 있습니다.
 
 
 
+**4. 메뉴 페이징 API**
 
+- 엔드포인트: `GET /api/v1/menus/page?page={page}&size={size}`
+- 코드
+    - `src/main/java/com/kdt/cafe/menu/MenuApiController.java` (`findPage`): page·size 수신 (기본값 0·10)
+    - `src/main/java/com/kdt/cafe/menu/MenuService.java` (`findPage`): 범위 검사 후 `PageRequest`로 ID 오름차순 조회
+    - `src/main/java/com/kdt/cafe/menu/MenuPageResponse.java`: `content`·`number`·`size`·`totalElements`·`totalPages` 응답
+- 동작
+    - 판매 중지 메뉴를 포함한 전체 메뉴를 ID 오름차순으로 반환합니다.
+    - DB에서 해당 페이지의 데이터만 조회합니다.
+    - 범위를 넘는 페이지는 `content: []`와 실제 전체 건수·전체 페이지 수를 반환합니다.
+    - 기존 전체 메뉴 목록(A06)의 배열 응답은 그대로 유지합니다.
+
+| 매개변수 | 기본값 | 허용 범위 | 범위 밖·형식 오류 |
+|:---|:---:|:---|:---|
+| `page` | 0 | 0 이상의 정수 | 400 `VALIDATION_ERROR` |
+| `size` | 10 | 1~50의 정수 | 400 `VALIDATION_ERROR` |
+
+- 실행 전: 2.2의 `data.sql` 실행 후 `pagedata.sql` 실행 (메뉴 14개, id 1~15 중 5번 없음)
+- 확인: 2.3 백엔드 실행 후 `src/page.http` 실행
+
+| 요청 | 기대 결과 |
+|:---|:---|
+| `page`, `size` 없음 | 200, `number: 0`, `size: 10` |
+| `page=0&size=5` | 200, `number: 0`, `size: 5`, `totalElements: 14`, `totalPages: 3` |
+| `page=99&size=5` | 200, `content: []`, `number: 99`, `size: 5`, `totalElements: 14`, `totalPages: 3` |
+| `page=-1&size=0` | 400 `VALIDATION_ERROR` |
+| `page=0&size=0` | 400 `VALIDATION_ERROR` |
+| `page=0&size=51` | 400 `VALIDATION_ERROR` |
+| `page=abc` | 400 `VALIDATION_ERROR`, `fieldErrors.page` |
 
 
 
