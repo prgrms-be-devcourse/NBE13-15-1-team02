@@ -5,6 +5,14 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      connect-timeout: 1s
+      timeout: 1s
+      repositories:
+        enabled: false
   jpa:
     hibernate:
       ddl-auto: none
@@ -15,6 +23,10 @@ spring:
         highlight_sql: true
         use_sql_comments: true
     open-in-view: false
+cafe:
+  cache:
+    menus:
+      ttl-seconds: ${MENU_CACHE_TTL_SECONDS:60}   # A06 전체 메뉴 캐시 TTL (1 이상의 정수 초)
 logging:
   level:
     sql: debug

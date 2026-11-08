@@ -26,7 +26,6 @@ NBE13-15-1-team02
 ├── src/test/java          # Controller 자동 테스트, DB 저장·롤백 테스트 (3.1, 6절 참고)
 ├── src/test/resources
 │   └── application-test.yaml   # 테스트 DB 설정 (kdt-spring-test)
-├── src/page.http          # 메뉴 페이징 API 확인 요청 (6절 참고)
 ├── requests
 │   └── api-check.http     # API 확인 요청 A01~A24 + 오류 6건 (3.2 참고)
 ├── web                    # 제공 화면, 8000 포트로 별도 실행 (2.4 참고)
@@ -325,9 +324,11 @@ Service를 거친 취소·재주문까지 포함한 전체 업무 규칙 테스�
 | A23 | 재주문 | ✅ | 
 | A24 | 접수일별 고객 통계 | ✅ |
 
+
 ### 미해결 오류
 
 없음
+
 
 ### 선택 심화
 | 항목 | 상태 |
