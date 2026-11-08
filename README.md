@@ -386,28 +386,3 @@ git push origin submit-v1  # 태그 푸시 <br>
 | `page=0&size=0` | 400 `VALIDATION_ERROR` |
 | `page=0&size=51` | 400 `VALIDATION_ERROR` |
 | `page=abc` | 400 `VALIDATION_ERROR`, `fieldErrors.page` |
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

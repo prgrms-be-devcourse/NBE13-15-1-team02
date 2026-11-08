@@ -24,31 +24,37 @@ public class MenuService {
     private final MenuRepository menuRepository;
     private final CategoryRepository categoryRepository;
     private final OrderItemRepository orderItemRepository;
+    private final MenuListCache menuListCache;
 
     @Autowired
     public MenuService(MenuRepository menuRepository,
                        CategoryRepository categoryRepository,
-                       OrderItemRepository orderItemRepository) {
+                       OrderItemRepository orderItemRepository,
+                       MenuListCache menuListCache) {
         this.menuRepository = menuRepository;
         this.categoryRepository = categoryRepository;
         this.orderItemRepository = orderItemRepository;
+        this.menuListCache = menuListCache;
     }
 
     // ID는 1 이상의 정수여야 한다 (아니면 400)
     private void validateId(Long id, String field) {
         if (id == null || id < 1) {
-            // TODO: ValidationErrorException(String, Map) 생성자가 생기면
-            //       Map.of(field, "1 이상의 정수여야 합니다.") 추가
             throw new ValidationErrorException("입력값을 확인해 주세요.",Map.of(field,"id 형식을 확인해 주세요."));
         }
     }
 
-    // A06 전체 메뉴
-    @Transactional(readOnly = true)
+    // A06 전체 메뉴 (Redis 캐시 사용)
+    // 캐시가 있으면 DB를 조회하지 않고 바로 반환, 없으면 DB 조회 후 캐시에 저장
+    // 캐시 HIT 때는 DB 연결도 쓰지 않도록 @Transactional 을 붙이지 않음
     public List<MenuResponse> findAll() {
-        return menuRepository.findAllByOrderByIdAsc().stream()
-                .map(MenuResponse::from)
-                .toList();
+        return menuListCache.get().orElseGet(() -> {
+            List<MenuResponse> menus = menuRepository.findAllByOrderByIdAsc().stream()
+                    .map(MenuResponse::from)
+                    .toList();
+            menuListCache.put(menus);
+            return menus;
+        });
     }
 
     // A07 메뉴 상세
@@ -66,7 +72,9 @@ public class MenuService {
         Category category = categoryRepository.findById(request.categoryId())
                 .orElseThrow(() -> new CategoryNotFoundException("카테고리를 찾을 수 없습니다."));
         Menu menu = new Menu(category, request.name(), request.price(), request.description());
-        return MenuResponse.from(menuRepository.save(menu));
+        MenuResponse saved = MenuResponse.from(menuRepository.save(menu));
+        menuListCache.evictAfterCommit();
+        return saved;
     }
 
     // A09 메뉴 일반 수정
@@ -84,6 +92,7 @@ public class MenuService {
         menu.changeDescription(request.description());
 
         menuRepository.flush();
+        menuListCache.evictAfterCommit();
         return MenuResponse.from(menu);
     }
 
@@ -99,6 +108,7 @@ public class MenuService {
             throw new MenuInUseException("주문에 사용된 메뉴는 삭제할 수 없습니다.");
         }
         menuRepository.delete(menu);
+        menuListCache.evictAfterCommit();
     }
 
     // A15 카테고리별 메뉴
@@ -127,7 +137,6 @@ public class MenuService {
     public List<MenuResponse> findByName(String name) {
         String keyword = (name == null) ? "" : name.trim();
         if (keyword.isEmpty() || keyword.length() > 100) {
-            // TODO: 생성자가 생기면 Map.of("keyword", "검색어는 공백 제외 1~100자여야 합니다.") 추가
             throw new ValidationErrorException("입력값을 확인해 주세요.",Map.of("keyword","메뉴 형식을 확인해 주세요."));
         }
         return menuRepository.findAllByOrderByIdAsc().stream()
@@ -144,6 +153,7 @@ public class MenuService {
                 .orElseThrow(() -> new MenuNotFoundException("메뉴를 찾을 수 없습니다."));
         menu.changeAvailable(request.available());
         menuRepository.flush();
+        menuListCache.evictAfterCommit();
         return MenuResponse.from(menu);
     }
 
