@@ -8,8 +8,9 @@
 
 ### 기술 스택
 - Java 21
-- Spring Boot 4.1.2 (Spring Web MVC, Spring Data JPA, Validation)
+- Spring Boot 4.1.2 (Spring Web MVC, Spring Data JPA, Validation, Spring Data Redis)
 - MySQL 8.4.11 (Docker 29.9.2, `mysql:8.4` 이미지)
+- Redis 7 (Docker, `redis:7` 이미지, 선택 심화 메뉴 조회 캐시용)
 - Gradle 9.8.2
 - Lombok, JUnit 5
 
@@ -19,7 +20,7 @@
 NBE13-15-1-team02
 ├── src/main/java          # 백엔드 코드 (아래 패키지 구조)
 ├── src/main/resources
-│   ├── application.yaml   # DB 접속 정보 (환경변수 주입, 2.1 참고)
+│   ├── application.yaml   # DB·Redis 접속 정보 (환경변수 주입, 2.1 참고)
 │   ├── schema.sql         # 테이블 생성 DDL
 │   ├── data.sql           # 초기 데이터 (카테고리 2개, 메뉴 4개) + 테스트용 주문 1건
 │   └── pagedata.sql       # 페이징 확인용 추가 메뉴 데이터 (6절 참고)
@@ -39,7 +40,7 @@ NBE13-15-1-team02
 src/main/java/com/kdt/cafe
 ├── CafeApplication.java
 ├── category    # 카테고리 CRUD, 카테고리별 메뉴 (A01~A05, A15)
-├── menu        # 메뉴 CRUD, 판매 중 목록·검색·판매 여부 변경 (A06~A10, A19~A21), 페이징(선택 심화)
+├── menu        # 메뉴 CRUD, 판매 중 목록·검색·판매 여부 변경 (A06~A10, A19~A21), 페이징·Redis 캐시 MenuListCache(선택 심화)
 ├── order       # 주문 접수·조회·취소·메모·재주문, 배송 묶음, 통계 (A11~A14, A16~A18, A22~A24)
 │               # ShippingDateCalculator (서울 14시 기준 배송일)
 ├── common      # 업무 예외 클래스, 공통 오류 응답 ApiError, 전역 핸들러 ApiExceptionAdvice
@@ -48,7 +49,7 @@ src/main/java/com/kdt/cafe
 
 ## 2. 실행 방법
 
-- 사전 준비 : JDK21, Docker, Git
+- 사전 준비 : JDK21, Docker, Git (Redis 캐시 확인 시에만 Redis 컨테이너 필요, 2.2 4) 참고)
 
 ### 2.1 환경 변수
 DB 접속 정보는 프로젝트 루트의 `.env`에서 읽습니다.<br>
@@ -68,6 +69,11 @@ cp .env.example .env        # Windows: copy .env.example .env
 | `DB_USERNAME` | DB 사용자  | `root` |
 | `DB_PASSWORD` | DB 비밀번호 | `your_password` |
 | `TEST_DB_URL` | 테스트 전용 DB 접속 주소 (6절 참고) | `jdbc:mysql://127.0.0.1:3306/kdt-spring-test?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&sslMode=DISABLED` |
+| `REDIS_HOST` | Redis 주소 (선택, 기본값 `127.0.0.1`) | `127.0.0.1` |
+| `REDIS_PORT` | Redis 포트 (선택, 기본값 `6379`) | `6379` |
+| `MENU_CACHE_TTL_SECONDS` | 메뉴 목록 캐시 TTL, 1 이상의 정수 초 (선택, 기본값 `60`) | `60` |
+
+Redis 변수 3개는 기본값이 있어 `.env`에 없어도 동작합니다. Redis 설정은 6.3절을 참고하세요.
 
 ### 2.2 DB 준비
 
@@ -123,6 +129,15 @@ SELECT id, email, status, shipping_date FROM `order`;
 ```
 
 테스트용 주문(`past@example.com`)은 3.2의 E5에서 사용하는 취소 마감이 지난 주문입니다.
+
+**4) Redis 컨테이너 실행 (선택 심화: 메뉴 조회 캐시 확인 시에만)**
+
+```bash
+docker run -d --name kdt-redis -p 6379:6379 redis:7
+```
+
+이미 `kdt-redis`가 있다면 `docker start kdt-redis`로 실행만 합니다.<br>
+Redis가 꺼져 있어도 백엔드는 정상 동작하며, 캐시 없이 DB에서 바로 조회합니다.
 
 ### 2.3 백엔드 실행 
 
@@ -393,21 +408,23 @@ Service를 거친 취소·재주문까지 포함한 전체 업무 규칙 테스�
 
 ### 6.3 Redis 메뉴 조회 캐시
 
-- 대상: A06 전체 메뉴 (`GET /api/v1/menu`)
+- 대상: A06 전체 메뉴 (`GET /api/v1/menus`)
 - 코드
     - `src/main/java/com/kdt/cafe/menu/MenuListCache.java`: Redis 캐시 조회·저장·삭제
     - `src/main/java/com/kdt/cafe/menu/MenuService.java` (`findAll`): 캐시가 있으면 캐시 반환, 없으면 DB 조회 후 저장
 - 동작
-    - 캐시 키 `cafe:menu:all`, TTL 60초
+    - 캐시 키 `cafe:menus:all`, 값은 메뉴 목록 JSON, TTL 60초(`MENU_CACHE_TTL_SECONDS`로 변경, 1 이상의 정수 초)
     - 첫 조회는 DB를 조회해 Redis에 저장하고, TTL 안의 재조회는 DB 없이 Redis 값을 반환합니다.
     - 메뉴 등록·수정·판매 여부 변경·삭제 시 커밋 후 캐시를 삭제해, 다음 조회에 변경 내용이 반영됩니다.
+    - Redis 오류가 나도 예외 없이 DB 조회로 대체됩니다.
     - 기존 A06의 응답 형식은 그대로 유지합니다.
-- 실행 전: Redis 컨테이너 실행
+- 실행 전: Redis 컨테이너 실행 (2.2의 4))
 
 ```bash
 docker run -d --name kdt-redis -p 6379:6379 redis:7
 ```
 
+- 자동 테스트: `MenuServiceCacheTest`는 Redis를 모의 객체로 대신하므로 Redis 없이 실행됩니다. DB 조회 횟수와 캐시 삭제 시점을 확인합니다.
 - 실행: 
 
 ```bash
@@ -416,7 +433,8 @@ docker run -d --name kdt-redis -p 6379:6379 redis:7
 ```
 
 - 확인: 2.3 백엔드 실행 후 `requests/api-check.http`의 C1~C12 실행 (3.2의 정리 요청 뒤)<br>
-  `docker exec -it kdt-redis redis-cli --raw`에서 `GET cafe:menus:all`, `TTL cafe:menus:all`로 캐시 저장·삭제를 확인합니다.
+  `docker exec -it kdt-redis redis-cli --raw`에서 `GET cafe:menus:all`, `TTL cafe:menus:all`로 캐시 저장·삭제를 확인합니다.<br>
+  DB 재조회 여부는 앱 콘솔의 `메뉴 캐시 HIT` / `메뉴 캐시 MISS` 로그와 select SQL 로그로 확인합니다.
 
 ### 6.4 메뉴 페이징 API
 
