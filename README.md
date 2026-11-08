@@ -8,8 +8,9 @@
 
 ### 기술 스택
 - Java 21
-- Spring Boot 4.1.2 (Spring Web MVC, Spring Data JPA, Validation)
+- Spring Boot 4.1.2 (Spring Web MVC, Spring Data JPA, Validation, Spring Data Redis)
 - MySQL 8.4.11 (Docker 29.9.2, `mysql:8.4` 이미지)
+- Redis 7 (Docker, `redis:7` 이미지, 선택 심화 메뉴 조회 캐시용)
 - Gradle 9.8.2
 - Lombok, JUnit 5
 
@@ -19,9 +20,10 @@
 NBE13-15-1-team02
 ├── src/main/java          # 백엔드 코드 (아래 패키지 구조)
 ├── src/main/resources
-│   ├── application.yaml   # DB 접속 정보 (환경변수 주입, 2.1 참고)
+│   ├── application.yaml   # DB·Redis 접속 정보 (환경변수 주입, 2.1 참고)
 │   ├── schema.sql         # 테이블 생성 DDL
-│   └── data.sql           # 초기 데이터 (카테고리 2개, 메뉴 4개) + 테스트용 주문 1건
+│   ├── data.sql           # 초기 데이터 (카테고리 2개, 메뉴 4개) + 테스트용 주문 1건
+│   └── pagedata.sql       # 페이징 확인용 추가 메뉴 데이터 (6절 참고)
 ├── src/test/java          # Controller 자동 테스트, DB 저장·롤백 테스트 (3.1, 6절 참고)
 ├── src/test/resources
 │   └── application-test.yaml   # 테스트 DB 설정 (kdt-spring-test)
@@ -38,16 +40,16 @@ NBE13-15-1-team02
 src/main/java/com/kdt/cafe
 ├── CafeApplication.java
 ├── category    # 카테고리 CRUD, 카테고리별 메뉴 (A01~A05, A15)
-├── menu        # 메뉴 CRUD, 판매 중 목록·검색·판매 여부 변경 (A06~A10, A19~A21)
+├── menu        # 메뉴 CRUD, 판매 중 목록·검색·판매 여부 변경 (A06~A10, A19~A21), 페이징·Redis 캐시 MenuListCache(선택 심화)
 ├── order       # 주문 접수·조회·취소·메모·재주문, 배송 묶음, 통계 (A11~A14, A16~A18, A22~A24)
 │               # ShippingDateCalculator (서울 14시 기준 배송일)
 ├── common      # 업무 예외 클래스, 공통 오류 응답 ApiError, 전역 핸들러 ApiExceptionAdvice
-└── config      # WebConfig(CORS), JpaAuditingConfig
+└── config      # WebConfig(CORS), JpaAuditingConfig, ClockConfig(서울 기준 Clock 빈)
 ```
 
 ## 2. 실행 방법
 
-- 사전 준비 : JDK21, Docker, Git
+- 사전 준비 : JDK21, Docker, Git (Redis 캐시 확인 시에만 Redis 컨테이너 필요, 2.2 4) 참고)
 
 ### 2.1 환경 변수
 DB 접속 정보는 프로젝트 루트의 `.env`에서 읽습니다.<br>
@@ -67,6 +69,11 @@ cp .env.example .env        # Windows: copy .env.example .env
 | `DB_USERNAME` | DB 사용자  | `root` |
 | `DB_PASSWORD` | DB 비밀번호 | `your_password` |
 | `TEST_DB_URL` | 테스트 전용 DB 접속 주소 (6절 참고) | `jdbc:mysql://127.0.0.1:3306/kdt-spring-test?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&sslMode=DISABLED` |
+| `REDIS_HOST` | Redis 주소 (선택, 기본값 `127.0.0.1`) | `127.0.0.1` |
+| `REDIS_PORT` | Redis 포트 (선택, 기본값 `6379`) | `6379` |
+| `MENU_CACHE_TTL_SECONDS` | 메뉴 목록 캐시 TTL, 1 이상의 정수 초 (선택, 기본값 `60`) | `60` |
+
+Redis 변수 3개는 기본값이 있어 `.env`에 없어도 동작합니다. Redis 설정은 6.3절을 참고하세요.
 
 ### 2.2 DB 준비
 
@@ -122,6 +129,15 @@ SELECT id, email, status, shipping_date FROM `order`;
 ```
 
 테스트용 주문(`past@example.com`)은 3.2의 E5에서 사용하는 취소 마감이 지난 주문입니다.
+
+**4) Redis 컨테이너 실행 (선택 심화: 메뉴 조회 캐시 확인 시에만)**
+
+```bash
+docker run -d --name kdt-redis -p 6379:6379 redis:7
+```
+
+이미 `kdt-redis`가 있다면 `docker start kdt-redis`로 실행만 합니다.<br>
+Redis가 꺼져 있어도 백엔드는 정상 동작하며, 캐시 없이 DB에서 바로 조회합니다.
 
 ### 2.3 백엔드 실행 
 
@@ -248,25 +264,46 @@ shippingDate와 today는 실행하는 날짜에 맞춰 바꿉니다.
 
 
 ### 3.3 시각 경계값 확인 방법
-- 13:59:59 / 14:00:00을 Clock으로 검증하는 방법
 
-## 4. 팀 
+실제 PC·서버 시계는 바꾸지 않고, 자동 테스트에 고정 시각을 넣어 확인합니다.<br>
+배송일 계산과 취소 가능 여부 판단은 `ShippingDateCalculator`가 현재 시각을 직접 구하지 않고 매개변수로 받아 처리하므로, 테스트에서 13:59:59 / 14:00:00을 그대로 넣어 검증할 수 있습니다.
+
+```bash
+./gradlew test --tests "com.kdt.cafe.order.ShippingDateCalculatorTest"     # MacOS·Linux
+.\gradlew test --tests "com.kdt.cafe.order.ShippingDateCalculatorTest"     # Windows
+```
+
+| 구분 | 입력 시각 | 결과 |
+|:---|:---|:---|
+| 배송일 | 13:59:59 접수 | 당일 배송 |
+| 배송일 | 14:00:00 접수 | 다음 날 배송 |
+| 취소 가능 여부 | 배송일 13:59:59 | 취소 가능 |
+| 취소 가능 여부 | 배송일 14:00:00 | 취소 불가 (API 응답: 409 `ORDER_NOT_CANCELLABLE`) |
+
+Service를 거친 취소·재주문까지 포함한 전체 업무 규칙 테스트는 6.1절을 참고하세요.
+
+## 4. 팀
 
 ### 팀원별 담당 작업
 
-| 이름 | 담당 작업 |
-|:---|:---|
-| 천승혁 | "여기에 작성해주세요" |
-| 이재민 | "여기에 작성해주세요" |
-| 이지원 | "여기에 작성해주세요" |
-| 이동근 | 카테고리 API(A01~A05, A15) - category 패키지 전체, WebConfig 설정 파일, README.md 작성|
+| 이름 | 역할 | 담당 API | 담당 작업 |
+|:---|:---|:---|:---|
+| 천승혁 | PM | A11\~A14, A16\~A18, A22\~A24<br>A06\~A10, A19\~A21 | 주문 기능 구현(`OrderController`·`OrderItem`)<br>공통·설정 패키지 작성(`common` 패키지·`config`)<br>메뉴 초안·API 테스트(`MenuService`·`MenuController` 초안, `api-check.http`)<br>별도 메뉴 페이징 API(심화) |
+| 이동근 | 카테고리 | A01\~A05, A15 | `category` 패키지 전체 구현<br>`WebConfig` 설정 파일 작성<br>실제 DB 저장·롤백 테스트(심화)<br>`README.md` 작성 |
+| 이지원 | 오더 | A11\~A14, A16\~A18, A22\~A24 | `Order` Entity·DTO·Service 구현<br>`api-check.http` 작성<br>`OrderApiControllerTest` 작성<br>업무 규칙 자동 테스트(심화) |
+| 이재민 | 메뉴 | A06\~A10, A19\~A21 | `menu` 패키지 전체 구현<br>Redis 메뉴 조회 캐시(심화)<br>PPT 제작 |
 
 ### 공동 구현 시 각자의 작업 내용
+
 | 공동 구현 항목 | 이름 | 각자의 작업 내용 |
 |:---|:---|:---|
-| DB 설계 | 전원 | 요구사항을 함께 대조하며 테이블 · 제약 조건 결정|
-
-
+| DB 설계 | 전원 | 요구사항을 함께 대조하며 테이블·제약 조건 결정 |
+| 주문 기능<br>(A11\~A14, A16\~A18, A22\~A24) | 천승혁 | `OrderController`, `OrderItem` 구현 |
+| | 이지원 | `Order` Entity·DTO·Service 구현 |
+| 메뉴 기능<br>(A06\~A10, A19\~A21) | 천승혁 | `MenuService`·`MenuController` 초안 작성 |
+| | 이재민 | `menu` 패키지 전체 구현 |
+| API 확인 요청<br>(`api-check.http`) | 천승혁 | 메뉴 API 테스트 요청 작성 |
+| | 이지원 | `api-check.http` 작성 |
 
 
 ## 5. 구현 현황 
@@ -311,28 +348,43 @@ shippingDate와 today는 실행하는 날짜에 맞춰 바꿉니다.
 ### 선택 심화
 | 항목 | 상태 |
 |:---|:---:|
-| 업무 규칙 자동 테스트 | ⬜ |
+| 업무 규칙 자동 테스트 | ✅ |
 | 실제 DB 저장·롤백 테스트 | ✅ |
-| Redis 메뉴 조회 캐시 | ⬜ |
+| Redis 메뉴 조회 캐시 | ✅ |
 | 메뉴 페이징 API | ✅ |
 | RestClient 외부 조회 | ⬜ |
 
-## 6. 제출 정보
+## 6. 선택 심화
 
-### 평가 대상
+### 6.1 업무 규칙 자동 테스트
 
-- 브랜치: `main`
-- 태그: `submit-v1`
+- 코드
+  - `src/test/java/com/kdt/cafe/order/ShippingDateCalculatorTest.java`
+  - `src/test/java/com/kdt/cafe/order/OrderTest.java`
+  - `src/test/java/com/kdt/cafe/order/OrderServiceTest.java`
+- 검증
 
-git checkout main          # 평가 대상 브랜치에 있는지 확인 <br>
-git commit -m "최종 제출"   # 마지막 커밋 <br>
-git push origin main       # 브랜치 먼저 푸시 <br>
-git tag submit-v1          # 지금 커밋에 태그 <br>
-git push origin submit-v1  # 태그 푸시 <br>
+```bash
+./gradlew test --tests "com.kdt.cafe.order.*Test"     # MacOS·Linux
+.\gradlew test --tests "com.kdt.cafe.order.*Test"     # Windows
+```
 
-### 선택 심화
+- 확인 내용
 
-**2. 실제 DB 저장·롤백 테스트**
+| 테스트 | 확인하는 업무 규칙 |
+|:---|:---|
+| `ShippingDateCalculatorTest` | 배송일: 13:59:59 접수는 당일, 14:00:00·14:00:01 접수는 다음 날, 12-31 14:00:01 접수는 다음 해 01-01 |
+| `ShippingDateCalculatorTest` | 취소 마감: 배송일 13:59:59까지 취소 가능, 14:00:00부터 불가 |
+| `OrderTest` | 취소: 배송일 13:59:59 취소 성공(상태·취소 시각만 변경), 14:00:00 취소는 `ORDER_NOT_CANCELLABLE`이고 주문 그대로 유지 |
+| `OrderTest` | 재취소: 마감 이후 재취소해도 성공하며 최초 취소 시각과 금액·항목 유지 |
+| `OrderServiceTest` | 취소(Service): 멈춘 시계 13:59:59 / 14:00:00으로 Service를 통한 취소 성공 / `ORDER_NOT_CANCELLABLE` |
+| `OrderServiceTest` | 재주문: 현재 메뉴 이름·가격으로 새 주문 계산, 원본 주문의 단가·항목 금액·총액 보존 |
+
+- 실제 PC·서버 시계는 바꾸지 않습니다.<br>
+  도메인(`ShippingDateCalculator`, `Order`)은 시각을 매개변수로 받아 고정 시각을 직접 넣고, `OrderService`는 생성자로 `Clock`을 주입받으므로(운영 시 `config/ClockConfig`의 서울 기준 `Clock` 빈 사용) 테스트에서는 `Clock.fixed`로 멈춘 시계를 넣어 검증합니다.
+- `OrderServiceTest`는 Spring 없이 Repository만 `mock()`으로 대신하고, 계산과 판단은 실제 Service·`Order` 로직이 수행합니다.
+
+### 6.2 실제 DB 저장·롤백 테스트
 
 - 코드: `src/test/java/com/kdt/cafe/order/OrderDbSaveRollbackTest.java`
 - 테스트 DB: 앱 실행용 `kdt-spring`과 분리된 `kdt-spring-test` 사용 (`src/test/resources/application-test.yaml`, `.env`의 `TEST_DB_URL`)<br>
@@ -354,9 +406,37 @@ git push origin submit-v1  # 태그 푸시 <br>
 - 매 실행 전 주문·항목 테이블을 비우므로 연속 실행해도 결과가 같습니다.
 - 콘솔의 `[① ...]` ~ `[④ ...]` 줄에서 단계별 DB 상태를 확인할 수 있습니다.
 
+### 6.3 Redis 메뉴 조회 캐시
 
+- 대상: A06 전체 메뉴 (`GET /api/v1/menus`)
+- 코드
+    - `src/main/java/com/kdt/cafe/menu/MenuListCache.java`: Redis 캐시 조회·저장·삭제
+    - `src/main/java/com/kdt/cafe/menu/MenuService.java` (`findAll`): 캐시가 있으면 캐시 반환, 없으면 DB 조회 후 저장
+- 동작
+    - 캐시 키 `cafe:menus:all`, 값은 메뉴 목록 JSON, TTL 60초(`MENU_CACHE_TTL_SECONDS`로 변경, 1 이상의 정수 초)
+    - 첫 조회는 DB를 조회해 Redis에 저장하고, TTL 안의 재조회는 DB 없이 Redis 값을 반환합니다.
+    - 메뉴 등록·수정·판매 여부 변경·삭제 시 커밋 후 캐시를 삭제해, 다음 조회에 변경 내용이 반영됩니다.
+    - Redis 오류가 나도 예외 없이 DB 조회로 대체됩니다.
+    - 기존 A06의 응답 형식은 그대로 유지합니다.
+- 실행 전: Redis 컨테이너 실행 (2.2의 4))
 
-**4. 메뉴 페이징 API**
+```bash
+docker run -d --name kdt-redis -p 6379:6379 redis:7
+```
+
+- 자동 테스트: `MenuServiceCacheTest`는 Redis를 모의 객체로 대신하므로 Redis 없이 실행됩니다. DB 조회 횟수와 캐시 삭제 시점을 확인합니다.
+- 실행: 
+
+```bash
+./gradlew test --tests "com.kdt.cafe.menu.MenuServiceCacheTest"    # MacOS·Linux
+.\gradlew test --tests "com.kdt.cafe.menu.MenuServiceCacheTest"    # Windows
+```
+
+- 확인: 2.3 백엔드 실행 후 `requests/api-check.http`의 C1~C12 실행 (3.2의 정리 요청 뒤)<br>
+  `docker exec -it kdt-redis redis-cli --raw`에서 `GET cafe:menus:all`, `TTL cafe:menus:all`로 캐시 저장·삭제를 확인합니다.<br>
+  DB 재조회 여부는 앱 콘솔의 `메뉴 캐시 HIT` / `메뉴 캐시 MISS` 로그와 select SQL 로그로 확인합니다.
+
+### 6.4 메뉴 페이징 API
 
 - 엔드포인트: `GET /api/v1/menus/page?page={page}&size={size}`
 - 코드
@@ -374,7 +454,9 @@ git push origin submit-v1  # 태그 푸시 <br>
 | `page` | 0 | 0 이상의 정수 | 400 `VALIDATION_ERROR` |
 | `size` | 10 | 1~50의 정수 | 400 `VALIDATION_ERROR` |
 
-- 실행 전: 2.2의 `data.sql` 실행 후 `pagedata.sql` 실행 (메뉴 14개, id 1~15 중 5번 없음)
+- 실행 전: 2.2의 `data.sql` → 3.2의 `api-check.http` → `src/main/resources/pagedata.sql` 순서로 실행 (메뉴 14개)<br>
+  `api-check.http`의 A08에서 등록한 5번 메뉴를 A10에서 삭제하므로, 메뉴 ID는 1~15 중 5번이 빠진 상태가 됩니다.<br>
+  `api-check.http`를 건너뛰어도 메뉴 개수는 14개로 같아 아래 기대 결과는 동일합니다.
 - 확인: 2.3 백엔드 실행 후 `src/page.http` 실행
 
 | 요청 | 기대 결과 |
@@ -386,3 +468,14 @@ git push origin submit-v1  # 태그 푸시 <br>
 | `page=0&size=0` | 400 `VALIDATION_ERROR` |
 | `page=0&size=51` | 400 `VALIDATION_ERROR` |
 | `page=abc` | 400 `VALIDATION_ERROR`, `fieldErrors.page` |
+
+### 6.5 미구현 항목
+
+- RestClient 외부 조회는 구현하지 않았습니다. (5절 구현 현황 참고)
+
+## 7. 제출 정보
+
+### 평가 대상
+
+- 브랜치: `main`
+- 태그: `submit-v1`
