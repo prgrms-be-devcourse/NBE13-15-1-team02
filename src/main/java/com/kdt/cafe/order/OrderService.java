@@ -7,9 +7,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -17,8 +17,6 @@ import java.util.regex.Pattern;
 @Service
 @Transactional(readOnly = true)
 public class OrderService {
-
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     // 명세 이메일 정규식
     private static final Pattern EMAIL_PATTERN =
@@ -39,11 +37,13 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final MenuRepository menuRepository;
+    private final Clock clock;
 
     @Autowired
-    public OrderService(OrderRepository orderRepository, MenuRepository menuRepository) {
+    public OrderService(OrderRepository orderRepository, MenuRepository menuRepository, Clock clock) {
         this.orderRepository = orderRepository;
         this.menuRepository = menuRepository;
+        this.clock = clock;
     }
 
     // A11 주문 접수
@@ -96,7 +96,6 @@ public class OrderService {
         validateDate(shippingDate);
 
         List<Order> orders = orderRepository
-                //.findByShippingDateAndStatusOrderByIdAsc(shippingDate, OrderStatus.PLACED);
                 .findDeliveryTargets(shippingDate,OrderStatus.PLACED);
 
         List<DeliveryBatchResponse> batches = new ArrayList<>();
@@ -140,7 +139,7 @@ public class OrderService {
     // A17 접수일별 주문 통계 : 주문이 없어도 0으로 채운 객체 반환
     public OrderStatisticsResponse getOrderStatistics(LocalDate date) {
         validateDate(date);
-        Summary summary = Summary.of(findOrdersReceivedOn(date));
+        Summary summary = Summary.of(findStatisticsTargetsOn(date));
         return new OrderStatisticsResponse(
                 date,
                 summary.orderCount(),
@@ -157,7 +156,7 @@ public class OrderService {
         validateDate(date);
         // PLACED 주문만 리스트에 담기
         List<OrderItem> placedItems = new ArrayList<>();
-        for (Order o : findOrdersReceivedOn((date))) {
+        for (Order o : findStatisticsTargetsOn((date))) {
             if (o.getStatus() == OrderStatus.PLACED) {
                 placedItems.addAll(o.getItems());
             }
@@ -184,11 +183,11 @@ public class OrderService {
     @Transactional
     public OrderResponse reorder(Long orderId) {
         // 원본 주문 꺼내기 -> 없으면 404 에러
-        Order original = getOrder(orderId);     //여기서 findByid, select 쿼리 실행
+        Order original = getOrderWithMenus(orderId);
 
         // 판매 중지 메뉴 검사 -> 하나라도 판매 중지면 409 에러
         for(OrderItem item : original.getItems()) {
-            checkAvailable(item.getMenu());     //id외의 필드를 읽으면 아이템마다 select from menu where id=?가 나간다
+            checkAvailable(item.getMenu());
         }
 
         // 배송지 비교 (배송일은 재주문 시각 기준으로 다시 계산)
@@ -207,6 +206,15 @@ public class OrderService {
         return OrderResponse.from(newOrder);
     }
 
+    // A23 재주문 전용 : items, menu 함께 조회
+    private Order getOrderWithMenus(Long orderId) {
+        if (orderId == null || orderId < 1) {
+            throw new ValidationErrorException(VALIDATION_MESSAGE, Map.of("orderId", "orderId 형식을 확인해 주세요."));
+        }
+        return orderRepository.findWithItemsAndMenus(orderId)
+                .orElseThrow(() -> new OrderNotFoundException("주문을 찾을 수 없습니다."));
+    }
+
     // A24 접수일별 고객 통계 : 이메일 오름차순, 모두 취소한 고객도 포함
     public List<CustomerStatisticsResponse> getCustomerStatistics(LocalDate date) {
         // 날짜 검사
@@ -214,7 +222,7 @@ public class OrderService {
 
         // 접수된 주문을 이메일별로 나누어 계산
         List<CustomerStatisticsResponse> result = new ArrayList<>();
-        for (Map.Entry<String, List<Order>> e : groupByEmail(findOrdersReceivedOn(date)).entrySet()) {
+        for (Map.Entry<String, List<Order>> e : groupByEmail(findStatisticsTargetsOn(date)).entrySet()) {
             String email = e.getKey();
             Summary summary = Summary.of(e.getValue());
             result.add(new CustomerStatisticsResponse(date, email, summary.orderCount(), summary.placedOrderCount(), summary.cancelledOrderCount(), summary.totalQuantity(), summary.totalAmount()));
@@ -225,13 +233,13 @@ public class OrderService {
 
     // 현재 시각 : 서울 기준, 초 단위 (초 아래 소수점 단위 자르기)
     private LocalDateTime now() {
-        return LocalDateTime.now(SEOUL).truncatedTo(ChronoUnit.SECONDS);
+        return LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS);
     }
 
     // orderId가 null이거나 0 이하(400 에러), DB에 없음(404 에러)
     private Order getOrder(Long orderId) {
         if (orderId == null || orderId < 1) {
-            throw new ValidationErrorException(VALIDATION_MESSAGE);
+            throw new ValidationErrorException(VALIDATION_MESSAGE,Map.of("orderId","orderId 형식을 확인해 주세요."));
         }
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("주문을 찾을 수 없습니다."));
@@ -242,7 +250,7 @@ public class OrderService {
         Set<Long> seen = new HashSet<>();
         for (OrderItemRequest item : items) {
             if (!seen.add(item.menuId())) {
-                throw new ValidationErrorException(VALIDATION_MESSAGE);
+                throw new ValidationErrorException(VALIDATION_MESSAGE,Map.of("items","items가 중복됩니다"));
             }
         }
     }
@@ -251,14 +259,14 @@ public class OrderService {
     private void validateEmail(String email) {
         if (email == null || email.isEmpty() || email.length() > 100
                 || !EMAIL_PATTERN.matcher(email).matches()) {
-            throw new ValidationErrorException(VALIDATION_MESSAGE);
+            throw new ValidationErrorException(VALIDATION_MESSAGE,Map.of("email","이메일 형식을 확인해 주세요."));
         }
     }
 
     // A14, A17, A18, A24에서 입력받은 날짜가 허용 범위 안에 있는지 검사 -> 400 에러
     private void validateDate(LocalDate date) {
         if (date == null || date.isBefore(MIN_DATE) || date.isAfter(MAX_DATE)) {
-            throw new ValidationErrorException(VALIDATION_MESSAGE);
+            throw new ValidationErrorException(VALIDATION_MESSAGE,Map.of("shippingDate","shippingDate 형식을 확인해 주세요."));
         }
     }
 
@@ -280,8 +288,8 @@ public class OrderService {
     }
 
     // 서울 기준 접수일 : [그날 00:00, 다음 날 00:00)
-    private List<Order> findOrdersReceivedOn(LocalDate date) {
-        return orderRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByIdAsc(
+    private List<Order> findStatisticsTargetsOn(LocalDate date) {
+        return orderRepository.findStatisticsTargets(
                 date.atStartOfDay(), date.plusDays(1).atStartOfDay());
     }
 

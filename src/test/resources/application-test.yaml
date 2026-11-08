@@ -1,0 +1,6 @@
+spring:
+  datasource:
+    url: ${TEST_DB_URL}
+  sql:
+    init:
+      mode: always

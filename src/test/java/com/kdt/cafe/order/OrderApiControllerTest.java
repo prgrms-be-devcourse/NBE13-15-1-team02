@@ -20,7 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(OrderApiController.class)
 
 @Import(ApiExceptionAdvice.class)
-class OrderApiControllerTest {
+public class OrderApiControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
